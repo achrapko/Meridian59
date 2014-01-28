@@ -609,6 +609,7 @@ messages:
       {
          propagate;
       }
+	  GodLog(string);
 
       % These checks seem to do double-duty, but this is so other countries can 
       %  localize the words yet English speaking admins can still use the system.

@@ -142,14 +142,174 @@ int C_GodLog(int object_id,
 	val_type parameter1;
 	kod_statistics *kstat;
 	class_node *c;
+	//parm_node blak_parm;
+		
 	kstat = GetKodStats();
 	c = GetClassByID(kstat->interpreting_class);
 
 	parameter1 = RetrieveValue(object_id,local_vars,normal_parm_array[1].type,
 			normal_parm_array[1].value);
 
-	sprintf(buf,"Object %i (CLASS %s) Reports: %s\n"
-		,object_id,c->fname,GetClassDebugStr(c,parameter1.v.data));
+	//Get the DM's name
+	object_node *o;
+	int message_id;
+	message_node *m;
+	val_type blak_val;
+	const char* tag;
+	const char* data;
+	resource_node *r;
+
+	o = GetObjectByID(object_id); //Get a pointer to the object in memory
+	message_id = GetIDByName("GetTrueName"); //Get the message ID for GetTrueName
+	if (message_id == INVALID_ID)
+	{
+		dprintf("Cannot find message 'GetTrueName'.\n");
+		return NIL;
+	}
+	m = GetMessageByID(o->class_id,message_id,NULL);//Check if the object supports the message we want
+	if (m == NULL)
+	{
+		dprintf("OBJECT %i can't handle MESSAGE %i GetTrueName.\n",
+			object_id,message_id);
+		return NIL;
+	}
+
+	blak_val.int_val = SendBlakodMessage(object_id,message_id,0,0); //Send the Message and store what it returns
+	
+	tag = GetTagName(blak_val); //should be RESOURCE
+	data = GetDataName(blak_val); //should be RESOURCE ID of DM's Name
+	
+	r = GetResourceByID(atoi(data));
+
+/*	sprintf(buf,"DM %s Reports: %s\n"
+		,r->resource_val,GetClassDebugStr(c,parameter1.v.data));*/
+	
+	//lopey parameters
+	int i;
+	val_type each_val;
+
+	sprintf(buf,"DM '%s' used command: ",r->resource_val);
+
+	for (i=0;i<num_normal_parms;i++)
+	{
+		each_val = RetrieveValue(object_id,local_vars,normal_parm_array[i].type,
+			normal_parm_array[i].value);
+		
+		switch (each_val.v.tag)
+		{
+		case TAG_DEBUGSTR :
+			sprintf(buf+strlen(buf),"%s",GetClassDebugStr(c,each_val.v.data));
+			break;
+			
+		case TAG_RESOURCE :
+			{
+				resource_node *r;
+				r = GetResourceByID(each_val.v.data);
+				if (r == NULL)
+				{
+					sprintf(buf+strlen(buf),"<unknown RESOURCE %i>",each_val.v.data);
+				}
+				else
+				{
+					sprintf(buf+strlen(buf),"%s",r->resource_val);
+				}
+			}
+			break;
+			
+		case TAG_INT :
+			sprintf(buf+strlen(buf),"%d",(int)each_val.v.data);
+			break;
+			
+		case TAG_CLASS :
+			{
+				class_node *c;
+				c = GetClassByID(each_val.v.data);
+				if (c == NULL)
+				{
+					sprintf(buf+strlen(buf),"<unknown CLASS %i>",each_val.v.data);
+				}
+				else
+				{
+					strcat(buf,"&");
+					strcat(buf,c->class_name);
+				}
+			}
+			break;
+			
+		case TAG_STRING :
+			{
+				int lenBuffer, lenString;
+				string_node *snod = GetStringByID(each_val.v.data);
+				
+				if (snod == NULL)
+				{
+					bprintf("C_Debug can't find string %i\n",each_val.v.data);
+					return NIL;
+				}
+				lenString = snod->len_data;
+				lenBuffer = strlen(buf);
+				memcpy(buf + lenBuffer,snod->data,snod->len_data);
+				*(buf + lenBuffer + snod->len_data) = 0;
+			}
+			break;
+			
+		case TAG_TEMP_STRING :
+			{
+				int len_buf;
+				string_node *snod;
+				
+				snod = GetTempString();
+				len_buf = strlen(buf);
+				memcpy(buf + len_buf,snod->data,snod->len_data);
+				*(buf + len_buf + snod->len_data) = 0;
+			}
+			break;
+			
+		case TAG_OBJECT :
+			{
+				object_node *o;
+				class_node *c;
+				user_node *u;
+				
+				/* for objects, print account if it's a user */
+				
+				o = GetObjectByID(each_val.v.data);
+				if (o == NULL)
+				{
+					sprintf(buf+strlen(buf),"<OBJECT %i invalid>",each_val.v.data);
+					break;
+				}
+				c = GetClassByID(o->class_id);
+				if (c == NULL)
+				{
+					sprintf(buf+strlen(buf),"<OBJECT %i unknown class>",each_val.v.data);
+					break;
+				}
+				
+				if (c->class_id == USER_CLASS || c->class_id == DM_CLASS ||
+					c->class_id == GUEST_CLASS || c->class_id == ADMIN_CLASS)
+				{
+					u = GetUserByObjectID(o->object_id);
+					if (u == NULL)
+					{
+						sprintf(buf+strlen(buf),"<OBJECT %i broken user>",each_val.v.data);
+						break;
+					}
+					sprintf(buf+strlen(buf),"ACCOUNT %i OBJECT %i",u->account_id,each_val.v.data);
+					break;
+				}
+			}
+			//FALLTHRU
+		default :
+			sprintf(buf+strlen(buf),"%s %s",GetTagName(each_val),GetDataName(each_val));
+			break;
+      }
+      
+      if (i != num_normal_parms-1)
+		  sprintf(buf+strlen(buf),",");
+   }
+
+
 	gprintf(buf);
 	return NIL;
 }
