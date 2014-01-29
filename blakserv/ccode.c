@@ -151,46 +151,20 @@ int C_GodLog(int object_id,
 			normal_parm_array[1].value);
 
 	//Get the DM's name
-	object_node *o;
-	int message_id;
-	message_node *m;
-	val_type blak_val;
-	const char* tag;
-	const char* data;
+	val_type name_val;
 	resource_node *r;
 
-	o = GetObjectByID(object_id); //Get a pointer to the object in memory
-	message_id = GetIDByName("GetTrueName"); //Get the message ID for GetTrueName
-	if (message_id == INVALID_ID)
-	{
-		dprintf("Cannot find message 'GetTrueName'.\n");
-		return NIL;
-	}
-	m = GetMessageByID(o->class_id,message_id,NULL);//Check if the object supports the message we want
-	if (m == NULL)
-	{
-		dprintf("OBJECT %i can't handle MESSAGE %i GetTrueName.\n",
-			object_id,message_id);
-		return NIL;
-	}
+	name_val.int_val = SendBlakodMessage(object_id,USER_NAME_MSG,0,NULL); //Get the DM's vrName
+	
+	r = GetResourceByID(name_val.v.data); //Convert the resource ID into something we can use
+	
+	sprintf(buf,"DM '%s' used Command: ",r->resource_val); //prepended to all GodLog entries
 
-	blak_val.int_val = SendBlakodMessage(object_id,message_id,0,0); //Send the Message and store what it returns
-	
-	tag = GetTagName(blak_val); //should be RESOURCE
-	data = GetDataName(blak_val); //should be RESOURCE ID of DM's Name
-	
-	r = GetResourceByID(atoi(data));
-
-/*	sprintf(buf,"DM %s Reports: %s\n"
-		,r->resource_val,GetClassDebugStr(c,parameter1.v.data));*/
-	
 	//lopey parameters
 	int i;
 	val_type each_val;
 
-	sprintf(buf,"DM '%s' used command: ",r->resource_val);
-
-	for (i=0;i<num_normal_parms;i++)
+	for (i=0;i<num_normal_parms;i++) //loop each parameter sent to this function and print it based on its tag
 	{
 		each_val = RetrieveValue(object_id,local_vars,normal_parm_array[i].type,
 			normal_parm_array[i].value);

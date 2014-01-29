@@ -685,10 +685,17 @@ void TryAdminCommand(int session_id,char *admin_command)
 	
 	if (s->account == NULL)
 	{
-		gprintf("Session: M Command: %s\n",admin_command);
+		gprintf("Maintenance Command: %s\n",admin_command);
 	}
 	else
-		gprintf("Session: %i Command: %s\n",s->account->account_id,admin_command);
+	{
+		val_type name_val;
+		resource_node *r;
+
+		name_val.int_val = SendTopLevelBlakodMessage(s->game->object_id,USER_NAME_MSG,0,NULL);
+		r = GetResourceByID(name_val.v.data);
+		gprintf("Admin '%s' Command: %s\n",r->resource_val,admin_command);
+	}
 	
 	DoAdminCommand(admin_command);
 }
