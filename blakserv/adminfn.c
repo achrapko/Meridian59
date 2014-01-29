@@ -689,12 +689,16 @@ void TryAdminCommand(int session_id,char *admin_command)
 	}
 	else
 	{
-		val_type name_val;
-		resource_node *r;
-
-		name_val.int_val = SendTopLevelBlakodMessage(s->game->object_id,USER_NAME_MSG,0,NULL);
-		r = GetResourceByID(name_val.v.data);
-		gprintf("Admin '%s' Command: %s\n",r->resource_val,admin_command);
+		if (s->game->object_id != 0)
+		{
+			val_type name_val;
+			resource_node *r;
+			name_val.int_val = SendTopLevelBlakodMessage(s->game->object_id,USER_NAME_MSG,0,NULL);
+			r = GetResourceByID(name_val.v.data);
+			gprintf("Admin '%s' Command: %s\n",r->resource_val,admin_command);
+		}
+		else
+			gprintf("Admin Console Command: %s\n",admin_command);
 	}
 	
 	DoAdminCommand(admin_command);
