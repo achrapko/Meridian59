@@ -160,7 +160,7 @@ int C_GodLog(int object_id,
 	
 	sprintf(buf,"DM '%s' used Command: ",r->resource_val); //prepended to all GodLog entries
 
-	//lopey parameters
+	//loopey parameters
 	int i;
 	val_type each_val;
 
