@@ -17,7 +17,7 @@ constants:
 resources:
 
    leatherarmor_name_rsc = "leather armor"
-   leatherarmor_icon_rsc = leathamr.bgf
+   leatherarmor_icon_rsc = grayleathamr.bgf
    leatherarmor_desc_rsc = \
       "This armor is made from thick, cured troll hides "
       "roughly stitched together.  Despite a smell reminiscent "
@@ -50,9 +50,39 @@ classvars:
    viDamage_base = 0
 
 properties:
+
+   %viXLAT_default =  PT_GRAY_TO_GOLD -- light brownish, best option so far
+									   %try making all colors darker in model?
+   %viXLAT_default = PT_GRAY_TO_PURPLE -- more light than GRAY_TO_GOLD
+   %viXLAT_default = PT_GRAY_TO_RED -- nerudite green
+   viXLAT_default = XLAT_TO_RED
    
 messages:
 
+   Constructor()
+   {
+      send(self,@SetXLATTranslation,#translation=viXLAT_default);
+	  propagate;
+   }
+   
+   SetXLATTranslation(translation=$)
+   {
+      local skin_color, XLAT;
+	  if poOwner <> $
+      {
+         skin_color = send(poOwner,@GetSkinColor);      
+         skin_color = send(poOwner,@ConvertSkinColorToXLAT,#skin_color=skin_color);
+      }
+      else
+      {
+         skin_color = XLAT_TO_SKIN2;
+      }
+	  XLAT = send(SYS,@EncodeTwoColorXLAT,#color1=translation,#color2=skin_color);
+      send(self,@SetPaletteTranslation,#translation=XLAT);
+      return;
+   }
+   
+   
    ShowShirt()
    {
       return TRUE;
