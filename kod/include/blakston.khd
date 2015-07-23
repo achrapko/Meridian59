@@ -2283,6 +2283,7 @@
    % Sum of the other squelched flags.
    PFLAG2_SQUELCHED_ALL    = 0x001E00
    PFLAG2_TEMPSAFE         = 0x002000
+   PFLAG2_SPELLPOWER       = 0x004000
 
    % Set of flags just for DM's
    % DM is completely invisible

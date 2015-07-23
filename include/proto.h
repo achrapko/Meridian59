@@ -262,6 +262,7 @@ enum {
    UC_DEPOSIT = 35,
    UC_WITHDRAW = 36,
    UC_BALANCE = 37,
+   UC_SPELLPOWER = 38,
 
    UC_APPEAL = 40,
    UC_REQ_RESCUE = 41,

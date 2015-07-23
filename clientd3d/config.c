@@ -64,6 +64,7 @@ static char INITooltips[]    = "Tooltips";
 static char INIInventory[]   = "InventoryNum";
 static char INIAggressive[]  = "Aggressive";
 static char INITempSafe[]    = "TempSafe";
+static char INISpellpower[]  = "Spellpower";
 static char INIGrouping[]    = "Grouping";
 static char INIBounce[]      = "Bounce";
 static char INIToolbar[]     = "Toolbar";
@@ -231,6 +232,7 @@ void ConfigLoad(void)
    config.inventory_num= GetConfigInt(interface_section, INIInventory, True, ini_file);
    config.aggressive   = GetConfigInt(interface_section, INIAggressive, False, ini_file);
    config.tempsafe     = GetConfigInt(interface_section, INITempSafe, True, ini_file);
+   config.spellpower   = GetConfigInt(interface_section, INISpellpower, True, ini_file);
    config.grouping     = GetConfigInt(interface_section, INIGrouping, True, ini_file);
    config.bounce       = GetConfigInt(interface_section, INIBounce, True, ini_file);
    config.toolbar      = GetConfigInt(interface_section, INIToolbar, True, ini_file);
@@ -337,6 +339,7 @@ void ConfigSave(void)
    WriteConfigInt(interface_section, INIInventory, config.inventory_num, ini_file);
    WriteConfigInt(interface_section, INIAggressive, config.aggressive, ini_file);
    WriteConfigInt(interface_section, INITempSafe, config.tempsafe, ini_file);
+   WriteConfigInt(interface_section, INISpellpower, config.spellpower, ini_file);
    WriteConfigInt(interface_section, INIGrouping, config.grouping, ini_file);
    WriteConfigInt(interface_section, INIBounce, config.bounce, ini_file);
    WriteConfigInt(interface_section, INIToolbar, config.toolbar, ini_file);

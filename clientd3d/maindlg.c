@@ -180,6 +180,7 @@ BOOL CALLBACK PreferencesDialogProc(HWND hDlg, UINT message, UINT wParam, LONG l
       CheckDlgButton(hDlg, IDC_INVNUM, config.inventory_num);
       CheckDlgButton(hDlg, IDC_SAFETY, config.aggressive);
       CheckDlgButton(hDlg, IDC_TEMPSAFE, config.tempsafe);
+      CheckDlgButton(hDlg, IDC_SPELLPOWERDATA, config.spellpower);
       CheckDlgButton(hDlg, IDC_GROUPING, config.grouping);
       CheckDlgButton(hDlg, IDC_SHOWFPS, config.showFPS);
       CheckDlgButton(hDlg, IDC_BOUNCE, config.bounce);
@@ -266,6 +267,7 @@ BOOL CALLBACK PreferencesDialogProc(HWND hDlg, UINT message, UINT wParam, LONG l
          config.inventory_num = IsDlgButtonChecked(hDlg, IDC_INVNUM);
          config.aggressive    = IsDlgButtonChecked(hDlg, IDC_SAFETY);
          config.tempsafe      = IsDlgButtonChecked(hDlg, IDC_TEMPSAFE);
+         config.spellpower    = IsDlgButtonChecked(hDlg, IDC_SPELLPOWERDATA);
          config.grouping      = IsDlgButtonChecked(hDlg, IDC_GROUPING);
          config.showFPS       = IsDlgButtonChecked(hDlg, IDC_SHOWFPS);
          config.bounce        = IsDlgButtonChecked(hDlg, IDC_BOUNCE);

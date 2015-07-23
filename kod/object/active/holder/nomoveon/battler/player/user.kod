@@ -531,6 +531,7 @@ properties:
 
    pbAutoCombine = TRUE
    pbAutoloot = TRUE
+   pbDisplaySpellpowerData = FALSE
 
    ptLogonDelayTimer = $
    
@@ -1819,6 +1820,20 @@ messages:
          }
 
          return;
+      }
+	  
+      if iClient_cmd = UC_SPELLPOWER
+	  {
+	     if Nth(client_msg,2) <> 0
+		 {
+		    Send(self,@SetPlayerFlag,#flag=PFLAG2_SPELLPOWER,#value=TRUE);
+		 }
+		 else
+		 {
+            Send(self,@SetPlayerFlag,#flag=PFLAG2_SPELLPOWER,#value=FALSE);
+		 }
+		 
+		 return;
       }
 
       if iClient_cmd = UC_GROUPING
@@ -10063,6 +10078,17 @@ messages:
    {
       pbAutoCombine = value;
       return;
+   }
+   
+   IsDisplayingSpellpowerData()
+   {
+	   return pbDisplaySpellpowerData;
+   }
+   
+   SetDisplaySpellpowerData(value=TRUE)
+   {
+		pbDisplaySpellpowerData = value;
+		return;
    }
    
    GetIP()

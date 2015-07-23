@@ -31,6 +31,11 @@ Toggle user safety flag (disallows player attacking)
 <state> =
 1 byte		1 = tempsafe on, 0 = tempsafe off
 ----------------------------------------------------------
+Toggle user display spellpower data flag (shows % spellpower)
+<UC_SPELLPOWER> <state>
+<state> = 
+1 byte      1 = spellpower on, 0 = spellpower off
+----------------------------------------------------------
 Get guild information
 <UC_REQ_GUILDINFO>
 ----------------------------------------------------------

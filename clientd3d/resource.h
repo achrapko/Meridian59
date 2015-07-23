@@ -403,6 +403,8 @@
 #define IDC_TEMPSAFE                    1209
 #define IDC_GROUPING                    1210
 #define IDC_SHOWFPS                     1211
+#define IDC_TEMPSAFE2                   1212
+#define IDC_SPELLPOWERDATA              1212
 #define ID_GAME_EXIT                    3002
 #define ID_FONT_MAIL                    3014
 #define ID_FONT_LIST                    3015
