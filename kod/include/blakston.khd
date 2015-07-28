@@ -2263,7 +2263,7 @@
 
    % Second set of player flags (in piFlags2)
    % A mask of flags that are unaffected by ResetPlayerFlagList
-   PFLAG2_MASK             = 0x003E80
+   PFLAG2_MASK             = 0x007E80
 
    PFLAG2_HASTED           = 0x000001
    PFLAG2_DANCING          = 0x000002

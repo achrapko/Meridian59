@@ -1831,19 +1831,19 @@ messages:
          return;
       }
 	  
-      if iClient_cmd = UC_SPELLPOWER
-	  {
-	     if Nth(client_msg,2) <> 0
-		 {
-		    Send(self,@SetPlayerFlag,#flag=PFLAG2_SPELLPOWER,#value=TRUE);
-		 }
-		 else
-		 {
-            Send(self,@SetPlayerFlag,#flag=PFLAG2_SPELLPOWER,#value=FALSE);
-		 }
+      % if iClient_cmd = UC_SPELLPOWER
+	  % {
+	     % if Nth(client_msg,2) <> 0
+		 % {
+		    % Send(self,@SetPlayerFlag,#flag=PFLAG2_SPELLPOWER,#value=TRUE);
+		 % }
+		 % else
+		 % {
+            % Send(self,@SetPlayerFlag,#flag=PFLAG2_SPELLPOWER,#value=FALSE);
+		 % }
 		 
-		 return;
-      }
+		 % return;
+      % }
 
       if iClient_cmd = UC_GROUPING
       {

@@ -1514,7 +1514,7 @@ messages:
                #parm1=Send(self,@GetName),#parm2=iSpellPower);
       }
 	  
-	  if Send(who,@CheckPlayerFlag,#flag=PFLAG2_SPELLPOWER)
+	  if Send(who,@CheckPlayerFlag,#flag=PFLAG2_SPELLPOWER,#flagset=2)
 	  {
          Send(who,@MsgSendUser,#message_rsc=spell_display_spellpower,
                #parm1=Send(self,@GetName),#parm2=iSpellPower);
