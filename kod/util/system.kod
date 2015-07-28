@@ -953,19 +953,19 @@ messages:
    {
       local i;
 
-      phUsers = $;
-      phRooms = $;
-      phSpells = $;
-      phItemAtts = $;
-
       Send(self,@CleanReflectionList);
 
       for i in plUsers_logged_on
       {
          Send(i,@GarbageCollecting);
       }
-	  
-	  Send(poStatistics,@GarbageCollecting);
+
+      phUsers = $;
+      phRooms = $;
+      phSpells = $;
+      phItemAtts = $;
+
+      Send(poStatistics,@GarbageCollecting);
 
       return;
    }
@@ -4121,7 +4121,8 @@ messages:
          Send(self,@ChangeUserName,#oUser=oUser,#sName=sName);
 
          Send(oUser,@SetLastRestartTime,#time=i);
-
+         % Set the last login time to now so the player can log in.
+         Send(oUser,@FirstLogon);
          lCharinfo = Rest(Rest(Rest(Rest(Rest(client_msg)))));
          Send(oUser,@PlayerNewCharInfo,#desc=sDesc,#charinfo=lCharinfo,
               #gender=iGender);

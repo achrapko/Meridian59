@@ -768,19 +768,28 @@ messages:
       
       return;
    }
-   
+
+   FirstLogon()
+   "Sets the last login time and sends an appeal "
+   "when a new character is created."
+   {
+      if piLastLoginTime = 0 AND piLast_Restart_Time = 0
+      {
+         Debug("Sending first time appeal");
+         Send(self,@SendFirstTimeAppeal);
+      }
+
+      piLastLoginTime = GetTime();
+
+      return;
+   }
+
    UserLogon(session_id = $)
    {
       local i;
       
       poSession = session_id;
       pbLogged_on = TRUE;
-
-      if piLastLoginTime = 0 AND piLast_Restart_Time = 0
-      {
-         Debug("Sending first time appeal");
-         Send(self,@SendFirstTimeAppeal);
-      }
 
       piLastLoginTime = GetTime();
       % Gotta load interface early!
@@ -2410,11 +2419,6 @@ messages:
    GarbageCollecting()
    {
       Send(self,@CancelIfOffer);
-
-      % Break trance for all spells except multicast and radius enchantment.
-      % Other spells could possibly fail due to system save, this way the
-      % user will at least get a fail message.
-      Send(self,@BreakTrance,#event=EVENT_SYSTEMSAVE);
 
       Send(self,@SysMsgSendUser,#message_rsc=user_garbage_collecting);
       Send(self,@WaveSendUser,#what=self,#wave_rsc=user_saving_wav_rsc);
