@@ -1,0 +1,129 @@
+% Meridian 59, Copyright 1994-2012 Andrew Kirmse and Chris Kirmse.
+% All rights reserved.
+%
+% This software is distributed under a license that is described in
+% the LICENSE file that accompanies it.
+%
+% Meridian is a registered trademark.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Initiative is AdventureSpell
+
+constants:
+
+   include blakston.khd
+
+resources:
+
+   Initiative_name_rsc = "initiative"
+   Initiative_icon_rsc = ifreeact.bgf
+   Initiative_desc_rsc = "Roll for Initiative."
+
+   Initiative_debug_rsc = "%s rolls 1d20 for initiative: %s"
+   
+   Initiative_low_rsc = "%s is caught almost off guard, fumbling thier weapon around to get ready."
+   Initiative_med_rsc = "%s grips their weapon, and braces for action."
+   Initiative_high_rsc = "%s almost lunges into action."
+   
+   Initiative_crit_success_rsc = "%s does something awesome -possibly send some extra info to that player like strength/weakness of enemies ect..."
+   Initiative_crit_fail_rsc = "%s makes a fool of themself"
+      % (joke - "%s reaches for their %s, but grabs a %d sided die from his pocket instead!"
+      % "Sibhod reaches for his axe, but grabs a 4 sided die from his pocket instead!"
+      % use the random sided die to roll for Punishment muahaha)
+
+classvars:
+
+   % diceNum = 1
+   % diceSides = 20
+   
+   vrName = Initiative_name_rsc
+   vrIcon = Initiative_icon_rsc
+   vrDesc = Initiative_desc_rsc
+
+   viSpell_num = SID_INITIATIVE
+   viSchool = SS_ADVENTURE_COMMAND
+   viSpell_level = 1
+   viMana = 0
+   viSpellExertion = 0
+   
+   vbDebug = FALSE
+
+   viFlash = FLASH_GOOD
+
+properties:
+
+messages:
+
+   CastSpell(who = $, lTargets = $)
+   {
+      local roll, i, each_obj;
+      
+	  % iDamage = Send(self,@DamageFactors,#damage=iDamage,#who=who);
+	  % iSpellPower = Send(self,@GetSpellPower,#who=caster);
+	       % Send(self,@DoEarthQuake,#who=who,#lTargets=lTargets,#oRoom=oRoom);
+		   
+      % roll = Send(self,@Roll,#who=who,#amount=1,#sides=20);
+	  
+	  roll = 5;
+      debug("Adventurer has rolled ",roll);
+      
+      foreach i in Send(Send(who,@GetOwner),@GetHolderActive)
+      {
+         each_obj = Send(Send(who,@GetOwner),@HolderExtractObject,#data=i);
+         if IsClass(each_obj,&User)
+         {
+            % Send(each_obj,@MsgSendUser,
+                        % #message_rsc=Initiative_debug_rsc,
+                        % #parm1=Send(who,@GetName),
+                        % #parm2=roll);
+            
+			% Send(each_obj,@MsgSendUser,
+                        % #message_rsc=Initiative_crit_success_rsc,
+                        % #parm1=Send(who,@GetName));
+                        
+            switch(roll)
+            {
+               case 1:
+                  %critical fail
+                  Send(each_obj,@MsgSendUser,
+                        #message_rsc=Initiative_crit_fail_rsc,
+                        #parm1=Send(who,@GetName));
+                  break;
+               case 20:
+                  %critical success
+                  Send(each_obj,@MsgSendUser,
+                        #message_rsc=Initiative_crit_success_rsc,
+                        #parm1=Send(who,@GetName));
+                  break;
+               case roll < 5:
+                  %low roll
+                  Send(each_obj,@MsgSendUser,
+                        #message_rsc=Initiative_low_rsc,
+                        #parm1=Send(who,@GetName));
+                  break;
+               case roll > 15:
+                  %high roll
+                  Send(each_obj,@MsgSendUser,
+                        #message_rsc=Initiative_high_rsc,
+                        #parm1=Send(who,@GetName));
+                  break;
+               default:
+                  %medium roll
+                  Send(each_obj,@MsgSendUser,
+                        #message_rsc=Initiative_med_rsc,
+                        #parm1=Send(who,@GetName));
+                  break;
+            }
+            
+         }
+      }
+      
+      propagate;
+   }
+
+
+
+
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

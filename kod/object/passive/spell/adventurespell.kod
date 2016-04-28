@@ -1,0 +1,77 @@
+% Meridian 59, Copyright 1994-2012 Andrew Kirmse and Chris Kirmse.
+% All rights reserved.
+%
+% This software is distributed under a license that is described in
+% the LICENSE file that accompanies it.
+%
+% Meridian is a registered trademark.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+AdventureSpell is Spell
+
+% Generic attacking spell, such as blast or bolt spells.
+
+constants:
+
+   include blakston.khd
+
+resources:
+
+classvars:
+
+   % vrKilled_Someone = attack_spell_killed_someone
+   % vrKilled_Self = attack_spell_killed_self
+   % vrCast = attack_spell_cast_rsc
+   % vrHit = attack_spell_hit_rsc
+
+   % viSpell_Num = $
+   % viSchool = $
+   % viSpell_level = 1
+   vbDebug = FALSE
+   
+properties:
+
+
+messages:
+
+   Roll(who=$,amount=0,sides=0)
+   "Returns the result of rolling dice"
+   {
+      local sum;
+      debug("Roll() being called");
+      sum = 0;
+      
+      while amount > 0
+      {
+         sum = sum + random(1,sides);
+         amount = amount - 1;
+      }
+      debug("Roll() returning sum");
+      return sum;
+   }
+
+
+   GetNumSpellTargets()
+   {
+      return 0;
+   }
+
+   SuccessChance(who=$)
+   {
+      return TRUE;
+   }
+
+   CanForget()
+   {
+      return FALSE;
+   }
+
+   OfferToNewCharacters()
+   {
+      return FALSE;
+   }
+
+
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
