@@ -160,6 +160,8 @@ void AdminShowMessage(int session_id,admin_parm_type parms[],
                       int num_blak_parm,parm_node blak_parm[]);
 void AdminShowClass(int session_id,admin_parm_type parms[],
                     int num_blak_parm,parm_node blak_parm[]);
+void AdminExportClassVars(int session_id, admin_parm_type parms[],
+					int num_blak_parm,parm_node blak_parm[]);
 void AdminShowPackages(int session_id,admin_parm_type parms[],
                        int num_blak_parm,parm_node blak_parm[]);
 void AdminShowOnePackage(dllist_node *dl);
@@ -561,6 +563,7 @@ admin_table_type admin_main_table[] =
 	{ NULL, {N}, F, A|M, admin_delete_table, LEN_ADMIN_DELETE_TABLE, "delete", "Delete subcommand" },
 	{ NULL, {N}, F, A|M, admin_disable_table,LEN_ADMIN_DISABLE_TABLE,"disable", "Disable subcommand" },
 	{ NULL, {N}, F, A|M, admin_enable_table, LEN_ADMIN_ENABLE_TABLE, "enable", "Enable subcommand" },
+	{ AdminExportClassVars,	{S,N}, F,A|M,NULL,0,"export",		"Export class variables in XML format"},	//Might add the option later, but blak_parm are not optional so NULL parms can't be used
 	{ AdminGarbage,       {N},   F, A|M, NULL, 0, "garbage",   "Garbage collect" },
 	{ NULL, {N}, F, A|M, admin_hangup_table, LEN_ADMIN_HANGUP_TABLE, "hangup", "Hangup subcommand" },
 	{ AdminLock,          {R,N}, F, A|M, NULL, 0, "lock",      "Lock the game" },
@@ -1202,6 +1205,108 @@ void AdminWho(int session_id,admin_parm_type parms[],
 	
 	admin_who_count = 0;
 	ForEachSession(AdminWhoEachSession);
+}
+
+void AdminExportClassVars(int session_id, admin_parm_type parms[],
+					int num_blak_parm,parm_node blak_parm[])
+{
+	char path[100] = "";
+	class_node *c;
+	
+	c = GetClassByName((char *)parms[0]);
+
+	strcat(path,"export/");
+	strcat(path,c->class_name);
+	strcat(path,".xml");
+	
+	FILE *f = fopen(path, "w");
+	if(f == NULL)
+	{
+		aprintf("\nError opening file\n");
+		fclose(f);
+	}
+	else
+	{
+		if(c != NULL)
+		{
+			if(c->class_name != NULL && c->class_id != NULL)
+			{
+				fprintf(f,"<!-- %s -->\n\n",path);
+				fprintf(f,"<class name=\"%s\" id=\"%d\">\n",c->class_name,c->class_id);
+			}
+			else
+			{
+				fprintf(f,"<!-- %s -->\n\n",path);
+				fprintf(f,"<class>\n");
+			}
+			
+			// if(c->super_id != NULL) fprintf(f,"\tint super_id: %d\n",c->super_id);
+			if(c->super_id != NULL)
+			{
+				fprintf(f,"\t<superClass name=\"%s\" id=\"%d\">\n",c->super_ptr->class_name,c->super_id);
+			}	
+			if(c->fname != NULL) fprintf(f,"\t<bof>%s</bof>\n",c->fname);
+			
+			///var_default are the ones defined or overridden in class.kod
+			fprintf(f,"\t<classvars>\n");
+			for(int n = 0; n < c->num_var_defaults; n++)
+			{
+				char *str = GetClassVarNameByID(c,c->var_default[n].id);
+				fprintf(f,"\t\t<%s data=\"%s\" tag=\"%s\"/>\n",str,GetDataName(c->var_default[n].val),GetTagName(c->var_default[n].val),str);
+			}
+			fprintf(f,"\t</classvars>\n");
+			
+			
+			fprintf(f,"\t<properties>\n");
+			for(int n = 0; n < c->num_prop_defaults; n++)
+			{
+				// char *str = (char*)GetPropertyNameByID(c,c->prop_default[n].id);
+				// // fprintf(f,"\t\t<%s data=\"%s\" tag=\"%s\"/>\n",str,GetDataName(c->var_default[n].val),GetTagName(c->var_default[n].val),str);
+				// fprintf(f,"\t\t<%s></%s>\n",str,str);
+				
+				class_node *t = c;
+			
+				while(t->super_ptr != NULL)
+				{
+					// fprintf(f,"t->class_name = %s\n",t->class_name);
+	
+					for(int n = 0; n < t->num_prop_defaults; n++)
+					{
+						char *str = (char*)GetPropertyNameByID(t,t->prop_default[n].id);
+						// aprintf("%s\n",GetTagName(t->prop_default[n].val));
+						fprintf(f,"\t\t<%s data=\"%s\" tag=\"%s\"/>\n",str,GetDataName(t->prop_default[n].val),GetTagName(t->prop_default[n].val));
+					}
+					
+					t = t->super_ptr;
+				}
+			}
+			fprintf(f,"\t</properties>\n");
+			
+			// It is starting to look like I will need to keep checking if c->super_id != NULL and grabbing each c->super_id.prop_defaults all the way back to Object
+			
+			
+			// aprintf("%s = %s %s\n",buf,GetTagName(o->p[i].val),
+			// GetDataName(o->p[i].val));
+			
+			
+			aprintf("num_prop_defaults = %d\n",c->num_prop_defaults);
+			aprintf("num_properties = %d\n\n",c->num_properties);
+			
+			// aprintf("property_name_node *property_names_this\n");
+			// aprintf("%s\n",c->property_names_this->name);
+			// aprintf("%s\n",c->property_names_this->next->name);
+			
+			fprintf(f,"</class>");
+		}
+		else
+		{
+			aprintf("\nclass \"%s\" not found\n",(char *)parms[0]);
+			return;
+		}
+		fclose(f);
+	}
+
+	free(path);
 }
 
 void AdminWhoEachSession(session_node *s)
