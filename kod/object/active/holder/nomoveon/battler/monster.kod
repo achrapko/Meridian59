@@ -47,14 +47,14 @@ resources:
    monster_drastically = "drastically "     % for 75+ pts to gain
 
    monster_teach_karma = \
-      "Your karma is not far enough along the true path for you to learn %s." 
+      "Your karma is not far enough along the true path for you to learn %s."
    monster_teach_quest_needed = \
       "I can teach you %s, but first you must prove your worth as a pupil."
    monster_teach_base = \
       "Your mind is focused properly, and with %sfurther progress in the "
       "previous %s levels you can learn %s." 
    monster_teach_success = \
-      "You are currently qualified to learn %s.  Congratulations."  
+      "You are currently qualified to learn %s.  Congratulations."
    monster_teach_already = "You have already been taught %s."
    monster_teach_nobase = \
       "You first need to have some knowledge of the previous level before you "
@@ -6716,15 +6716,15 @@ messages:
       piHatred = iHatred;
 
       if poTarget <> $
+         AND IsClass(poTarget,&User)
          AND Send(poTarget,@GetOwner) = poOwner
-         AND IsClass(poTarget,&user)
       {
-         Send(poTarget,@SubtractFromMonsterChasers,
-              #level=viLevel);
+         Send(poTarget,@SubtractFromMonsterChasers,#level=viLevel);
       }
 
       poTarget = what;
-      if IsClass(poTarget,&user)
+      if IsClass(poTarget,&User)
+         AND Send(poTarget,@GetOwner) = poOwner
       {
          Send(poTarget,@AddToMonsterChasers,#level=viLevel);
       }
@@ -7003,6 +7003,16 @@ messages:
       return;
    }
 
+   GetSpellBook()
+   {
+      return plSpellBook;
+   }
+
+   GetBaseSpellPower()
+   {
+      return piSpellPower;
+   }
+
    % Gets the projectile icon of the monster.  If monster doesn't use
    %  projectiles, return nil
    GetProjectileIcon()
@@ -7029,6 +7039,95 @@ messages:
    LoseLight()
    {
       return 0;
+   }
+
+   PrintInfo()
+   {
+      local i, iTresLen, lTresList, oItem, oTresType;
+
+      ClearTempString();
+
+      oTresType = Send(SYS,@FindTreasureByNum,#num=Send(self,@GetTreasureType));
+
+      if (oTresType <> $)
+      {
+         lTresList = Send(oTresType,@GetTreasureList);
+      }
+
+      iTresLen = Length(lTresList);
+
+      if (iTresLen > 0)
+      {
+         AppendTempString(", Treasure: ");
+      }
+      else
+      {
+         AppendTempString(", No Treasure.");
+      }
+
+      foreach i in lTresList
+      {
+         oItem = Send(SYS,@FindTemplateItemByClass,#cClass=First(i));
+         if (oItem = $)
+         {
+            continue;
+         }
+
+         AppendTempString(Send(oItem,@GetTrueName));
+         AppendTempString(" ");
+         AppendTempString(Nth(i,2));
+         if (--iTresLen > 0)
+         {
+            AppendTempString("\%, ");
+         }
+         else
+         {
+            AppendTempString("\%");
+         }
+      }
+
+      GodLog(Send(self,@GetTrueName)," level: ",viLevel,", karma: ",viKarma,
+         ", speed: ",viSpeed, GetTempString());
+
+      return;
+   }
+
+   PrintSellList()
+   "Prints out all the items (not spells/skills) for sale for this mob, "
+   "including any conditional sale items (with prices)."
+   {
+      local i, iPrice;
+
+      if (plFor_sale = $
+         OR First(plFor_sale) = $)
+      {
+         return;
+      }
+
+      GodLog("NPC: ",Send(self,@GetName));
+
+      foreach i in First(plFor_sale)
+      {
+         iPrice = Send(i,@GetInitValue) * (100 + 20 * viMerchant_markup) / 100;
+         GodLog("Item: ",Send(i,@GetName),", Price: ",iPrice);
+      }
+
+      Send(Send(SYS,@GetLibrary),@PrintMobConditional,#mob=self);
+
+      return;
+   }
+
+   PrintRoom()
+   "Prints out the name of the mob and the room it is in."
+   {
+      if (poOwner = $)
+      {
+         return;
+      }
+
+      GodLog("NPC: ",Send(self,@GetName),", Map: ",Send(poOwner,@GetName));
+
+      return;
    }
 
 end

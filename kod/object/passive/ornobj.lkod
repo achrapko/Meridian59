@@ -275,6 +275,9 @@ oo_bones_desc = de \
    "Dies sind die zersplitterten, abgenagten Überreste von ein paar unglücklichen "
    "und bestimmt auch unklugen Forschern. Dich schaudert bei dem Gedanken "
    "an das Schicksal, das diese arme Seele ereilt hat."
+oo_bones_raza_desc = de \
+   "Dieser Knochenhaufen ist ohne Zweifel das Überbleibsel eines Körpers, "
+   "der schon vor vielen Jahren gestorben ist."
 oo_nestobj1_name = de "Der Haufen von Dreck"
 oo_nestobj1_desc = de \
    "Dies ist ein Haufen von gutem Dreck und organischem Lehm."
@@ -612,3 +615,7 @@ oo_Qormas_tree_big_desc = de \
    "zu schauen,und zu sehen, welch schöne Todeswerkzeuge sie bekommen haben."
 oo_Qormas_wreath_name = de "Der Qormas Kranz"
 oo_Qormas_wreath_desc = de "Ein Qormas Kranz"
+oo_modportal_name = de "Miniaturportal"
+oo_modportal_desc = de \
+   "Auf einem Schild unter dem Modell steht:\nEin Portal, das diejenigen "
+   "teleportiert, die hindurchtreten."

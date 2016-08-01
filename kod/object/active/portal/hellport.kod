@@ -37,18 +37,14 @@ resources:
 classvars:
 
    vrName = hellportal_name_rsc
-
    viMoveOn_type = MOVEON_TELEPORTER
-
    viAnimationSpeed = 400
 
 properties:
-   
+
    vrIcon = hellportal_icon_rsc
    vrDesc = hellportal_desc_rsc
-
    piDest_room = RID_TOS_INN
-
    plPossibleLocations = $
    ptLocations = $
    piDrawFx = DRAWFX_TRANSLUCENT_75
@@ -58,7 +54,7 @@ messages:
    Constructed()
    {
       plPossibleLocations = [ RID_TOS_INN, RID_COR_INN, RID_BAR_INN,
-                              RID_JAS_INN, RID_MAR_INN ];
+                              RID_JAS_INN, RID_MAR_INN, RID_RAZA_INN ];
 
       % Set up the locations timer.
       Send(self,@LocationsTimer);
@@ -152,7 +148,7 @@ messages:
    "Called when something walks on top of us."
    {
       local oRoom;
-      
+
       % Check for Death Rifters.
       if poOwner <> $
          AND IsClass(poOwner,&Underworld)

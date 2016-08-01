@@ -127,6 +127,7 @@ resources:
    user_show_nested_mail = "%s"
    user_logon_one_mail = "You have %i piece of new mail."
    user_logon_many_mail = "You have %i pieces of new mail."
+   user_mail_squelched = "Your mail posting privileges have been revoked."
    user_mail_toobig = \
       "Sorry, that message was so large the courier died trying to carry it, "
       "delivery failed."
@@ -353,9 +354,10 @@ resources:
    user_cant_balance = "You can't check any balance here!"
 
    user_appeal = "%s appeals, \"%q~n\""
-   user_first_time_appeal = "~B~U~k[###]~n ~B~v%s has just logged on for the first time."
+   user_first_time_appeal = \
+      "~B~U~k[###]~n ~B~v%s has just logged on for the first time."
    user_did_appeal = "You appeal, \"%q~n\""
-
+   user_appeal_squelched = "Your appeal privileges have been revoked."
    user_kill_zone = \
       "Your guardian angel whispers to you, \"I cannot defend you here.\""
    user_angel_rejoins = "Your guardian angel rejoins you."
@@ -370,8 +372,8 @@ resources:
       "WHOA BUDDY!  Take a breath, that message was WAY too big!"
    user_news_subject_toobig = \
       "Your newsglobe subject length was too long."
+   user_news_los = "You cannot see the newsglobe from here."
 
-   user_guild_rsc = "guild"
    user_guildofficer_rsc = "guildofficer"
 
    user_default_url = "https://www.meridiannext.com/"
@@ -937,7 +939,7 @@ messages:
       % If player logs off somewhere other than an inn or inside a guildhall
       % they can normally enter (but not just in the foyer), create a ghost.
       if (NOT Send(poOwner,@CheckDefaultRoomFlag,#flag=ROOM_SAFELOGOFF))
-         AND NOT IsClass(self,&DM)
+         AND NOT (IsClass(self,&DM) OR IsClass(self,&EscapedConvict))
          AND Send(SYS,@GetLogoffPenaltyEnable)
          AND piLogoffPenaltyCount >= 0
          AND NOT (IsClass(poOwner,&GuildHall)
@@ -1068,6 +1070,18 @@ messages:
       return;
    }
 
+#region Penalties
+
+   IsRecentPvPCombatant()
+   {
+      local iTime, iRecent;
+
+      iTime = GetTime();
+      iRecent = iTime - Send(SETTINGS_OBJECT,@GetRecentPvPTime);
+
+      return (piTimeAttackedByPlayer > iRecent OR piTimeAttackedPlayer > iRecent);
+   }
+
    DecayLogoffPenaltyCount()
    {
       piLogoffPenaltyCount = Bound(piLogoffPenaltyCount - 1,0,$);
@@ -1105,6 +1119,339 @@ messages:
       return;
    }
 
+   CalculatePenalties(what=$)
+   "'what' is the calling object, i.e. logoff ghost, phase spell."
+   {
+      local iPenCount, iEquivDeath, iPointLoss, iItemLoss, oDrop,
+            iXPLoss, iNumItems, iNumSpellPts, iNumSkillPts, oSoldierShield;
+
+      // Check if we're eligible for a free pen.
+      if (Send(SETTINGS_OBJECT,@GetFreeNoPvPPenActive,
+               #flag=piFlags & PFLAG_MURDERER)
+         AND NOT Send(self,@IsRecentPvPCombatant))
+      {
+         // Reset the time to avoid any funny business like potential double
+         // penalties.
+         Send(self,@ResetLogoffPenaltyTime);
+
+         // Calling object still needs to display a message for the free pen.
+         if (what <> $)
+         {
+            Send(what,@SendPenaltyInfo,#who=self);
+         }
+
+         return;
+      }
+
+      // Add the penalty for repeat logging to the number of recent kills.
+      iPenCount = (Send(self,@GetLogoffPenaltyCount)
+                       + Send(self,@GetDecayedUnjustifiedKills));
+
+      // The point at which iPenCount = same cost as a death.
+      iEquivDeath = (Send(SYS,@GetLogoffPenaltyEquivDeath));
+
+      // Increase the penalty counter due to taking a pen.
+      Send(self,@IncrementLogoffPenaltyCount);
+
+      // Flat pens are just x item, y spell, y skill, with iPenCount set to 0.
+      if Send(SETTINGS_OBJECT,@GetFlatPenaltiesEnable,
+               #flag=piFlags & PFLAG_MURDERER)
+      {
+         iPenCount = 0;
+         iPointLoss = 2;
+         iItemloss = 1;
+      }
+      else
+      {
+         iPointLoss = 0;
+         iItemloss = 0;
+      }
+
+      if (pbLogged_On)
+      {
+         oDrop = self;
+      }
+      else
+      {
+         oDrop = what;
+      }
+
+      // Potentially lose XP
+      iXPLoss = Send(self,@PenaltyLoseXP,#iPenCount=iPenCount,
+                     #iEquivDeath=iEquivDeath);
+      iNumItems = Send(self,@PenaltyDropItems,#iNumDrop=iItemloss,
+                        #iPenCount=iPenCount,#iEquivDeath=iEquivDeath,
+                        #where=oDrop);
+      iNumSpellPts = Send(self,@PenaltyLoseSpellPoints,
+                           #iNumPoints=iPointLoss,#iPenCount=iPenCount,
+                           #iEquivDeath=iEquivDeath);
+      iNumSkillPts = Send(self,@PenaltyLoseSkillPoints,
+                           #iNumPoints=iPointLoss,#iPenCount=iPenCount,
+                           #iEquivDeath=iEquivDeath);
+
+      // Let the faction shield know of this person's naughtiness if we took a
+      // penalty.
+      oSoldierShield = Send(self,@FindUsing,#class=&SoldierShield);
+      if oSoldierShield <> $
+         AND iPenCount > 0
+      {
+         % Treat it like a death.
+         Send(oSoldierShield,@OwnerDied,#logoff=TRUE);
+      }
+
+      // Reset the time to avoid any funny business like potential double
+      // penalties.
+      Send(self,@ResetLogoffPenaltyTime);
+
+      // The calling object will let the user know what the penalties were.
+      if (what <> $)
+      {
+         Send(what,@SendPenaltyInfo,#who=self,#iXPLost=iXPLoss,
+               #iItemsLost=iNumItems,#iSpellPtLost=iNumSpellPts,
+               #iSkillPtLost=iNumSkillPts);
+      }
+
+      return;
+   }
+
+   PenaltyLoseXP(iPenCount=0, iEquivDeath=0)
+   {
+      local iXPLoss;
+
+      if iPenCount < iEquivDeath
+         OR NOT Send(SETTINGS_OBJECT,@LoseXPOnPenalty)
+      {
+         return 0;
+      }
+
+      iXPLoss = Send(SYS,@GetXPDiffForLevel,#iLevel=Send(self,@GetBaseMaxHealth));
+      Send(self,@AddXP,#iAmount=-iXPLoss);
+
+      return iXPLoss;
+   }
+
+   PenaltyDropItems(iPenCount=0, iEquivDeath=0, iNumDrop=0, where=$)
+   {
+      local i, iNumInventory, iNumItemsLeft;
+
+      if (where = $)
+      {
+         return 0;
+      }
+
+      iNumInventory = Send(self,@GetNumItemsInInventory);
+
+      // If there's no parameter sent for the number of items to drop,
+      // calculate it here.
+      if (iNumDrop <= 0)
+      {
+         iNumDrop = iNumInventory * iPenCount / Bound(iEquivDeath, 1, $);
+
+         // Add two items for murderers.
+         if (piFlags & PFLAG_MURDERER)
+         {
+            iNumDrop = iNumDrop + 2;
+         }
+
+      }
+      else if (piFlags & PFLAG_MURDERER)
+      {
+         // Double item drop on flat pens for murderers.
+         iNumDrop = iNumDrop * 2;
+      }
+
+      // Need to drop more items than we have.
+      if iNumDrop >= iNumInventory
+      {
+         iNumDrop = iNumInventory;
+         i = 1;
+         while i <= iNumDrop
+         {
+            if Send(self,@DropItem,#index=i,#targetGhost=where)
+            {
+               --iNumDrop;
+            }
+            else
+            {
+               // If item doesn't drop, increment i.
+               ++i;
+            }
+         }
+         iNumItemsLeft = Send(self,@GetNumItemsInInventory);
+      }
+      else
+      {
+         iNumItemsLeft = iNumInventory;
+         while iNumDrop-- > 0 AND iNumItemsLeft > 0
+         {
+            // Try to drop a random item.
+            i = Random(1,iNumItemsLeft);
+            if Send(self,@DropItem,#index=i,#targetGhost=where)
+            {
+               --iNumItemsLeft;
+            }
+            else
+            {
+               // If the Random drop fails, scan through and drop one.
+               i = 1;
+               while i <= iNumItemsLeft
+                     AND NOT Send(self,@DropItem,#index=i,#targetGhost=where)
+               {
+                  ++i;
+               }
+
+               iNumItemsLeft = Send(self,@GetNumItemsInInventory);
+               // If nothing can be dropped, exit.
+               if i > iNumItemsLeft
+               {
+                  break;
+               }
+            }
+         }
+      }
+
+      // iNumItemsLeft is still accurate here.
+      return iNumInventory - iNumItemsLeft;
+   }
+
+   PenaltyLoseSpellPoints(iPenCount=0, iEquivDeath=0, iNumPoints=0)
+   {
+      local i, iSpellNum, iLoops, bLooped, iLossAmount, iPointsLost, iStart;
+
+      if (plSpells = $)
+      {
+         return 0;
+      }
+
+      iPointsLost = 0;
+
+      // Calculate the number of points to take if not set.
+      if (iNumPoints <= 0)
+      {
+         iNumPoints = (Length(plSpells) * iPenCount) / iEquivDeath;
+         if Random(1,(iEquivDeath - 1)) < (iPenCount MOD iEquivDeath)
+         {
+            ++iNumPoints;
+         }
+      }
+
+      // Double the point loss for murderers.
+      if (piFlags & PFLAG_MURDERER)
+      {
+         iLossAmount = -2;
+      }
+      else
+      {
+         iLossAmount = -1;
+      }
+
+      // Pick random spells to subtract points from.
+      for (iLoops = 0; iNumPoints > 0 AND iLoops < 200; ++iLoops, --iNumPoints)
+      {
+         // Don't iterate more than once through the spell list.
+         bLooped = FALSE;
+
+         // Try to lower a random spell.
+         i = Random(1,Length(plSpells));
+         // Save this index as our starting point.
+         iStart = i;
+         // Iterate through if we couldn't lower this one.
+         while (i <> iStart OR NOT bLooped)
+            AND (Send(self,@DecodeSpellAbility,#compound=Nth(plSpells,i)) < 6)
+         {
+            if ++i > Length(plSpells) AND NOT bLooped
+            {
+               // We get one free reset (since we started in the middle)
+               i = 1;
+               bLooped = TRUE;
+            }
+         }
+
+         // If we got all the way through the spell list without lowering
+         // anything, bail.
+         if i = iStart AND bLooped
+         {
+            break;
+         }
+
+         iSpellNum = Send(self,@DecodeSpellNum,#compound=Nth(plSpells,i));
+         Send(self,@ChangeSpellAbility,#spell_num=iSpellNum,#amount=iLossAmount);
+         iPointsLost = iPointsLost - iLossAmount;
+      }
+
+      return iPointsLost;
+   }
+
+   PenaltyLoseSkillPoints(iPenCount=0, iEquivDeath=0, iNumPoints=0)
+   {
+      local i, iSkillNum, iLoops, bLooped, iLossAmount, iPointsLost, iStart;
+
+      if (plSkills = $)
+      {
+         return 0;
+      }
+
+      iPointsLost = 0;
+
+      // Calculate the number of points to take if not set.
+      if (iNumPoints <= 0)
+      {
+         iNumPoints = (Length(plSkills) * iPenCount) / iEquivDeath;
+         if Random(1,(iEquivDeath - 1)) < (iPenCount MOD iEquivDeath)
+         {
+            ++iNumPoints;
+         }
+      }
+
+      // Double the point loss for murderers.
+      if (piFlags & PFLAG_MURDERER)
+      {
+         iLossAmount = -2;
+      }
+      else
+      {
+         iLossAmount = -1;
+      }
+
+      // Pick random skills to subtract points from.
+      for (iLoops = 0; iNumPoints > 0 AND iLoops < 200; ++iLoops, --iNumPoints)
+      {
+         // Don't iterate more than once through the skill list.
+         bLooped = FALSE;
+
+         // Try to lower a random spell.
+         i = Random(1,Length(plSkills));
+         // Save this index as our starting point.
+         iStart = i;
+         // Iterate through if we couldn't lower this one.
+         while (i <> iStart OR NOT bLooped)
+            AND (Send(self,@DecodeSkillAbility,#compound=Nth(plSkills,i)) < 6)
+         {
+            if ++i > Length(plSkills) AND NOT bLooped
+            {
+               // We get one free reset (since we started in the middle)
+               i = 1;
+               bLooped = TRUE;
+            }
+         }
+
+         // If we got all the way through the skill list without lowering
+         // anything, bail.
+         if i = iStart AND bLooped
+         {
+            break;
+         }
+
+         iSkillNum = Send(self,@DecodeSkillNum,#compound=Nth(plSkills,i));
+         Send(self,@ChangeSkillAbility,#skill_num=iSkillNum,#amount=iLossAmount);
+         iPointsLost = iPointsLost - iLossAmount;
+      }
+
+      return iPointsLost;
+   }
+
+#endregion Penalties
+
    AdminSystemMessage(string = $)
    {
       Send(self,@SysMsgSendUser,#message_rsc=user_admin_message,#parm1=string);
@@ -1115,13 +1462,6 @@ messages:
    SomeoneLogon(what = $)
    {
       local rName;
-
-      % don't inform non-DM clients of Escaped Convict
-      if (NOT IsClass(self,&DM) AND IsClass(what,&EscapedConvict)
-         AND NOT IsClass(self,&EscapedConvict) AND IsClass(what,&EscapedConvict))
-      {
-         return;
-      }
 
       rName = Send(what,@GetTrueName);
 
@@ -1752,7 +2092,7 @@ messages:
    "appropriate. This function will force a suicide and clean up anything, "
    "ignoring game rules."
    {
-      local sName;
+      local oObj, sName;
 
       Send(self,@CancelIfOffer);
 
@@ -1763,11 +2103,20 @@ messages:
          Send(self,@PerformGuildDisband);
       }
 
-      piLast_Restart_time = getTime();
+      oObj = Send(SYS,@GetCaramo);
+      if (Send(oObj,@GetJusticar) = self)
+      {
+         // Justicar must give up office.
+         Send(oObj,@SetJusticar,#who=$);
+      }
+
+      piLast_Restart_time = GetTime();
       piLastLoginTime = 0;
       psUrl = $;
       plHonor = $;
       piLogoffPenaltyCount = -1;
+      piXP_total = 0;
+      piTraining_points = 0;
 
       if pbLogged_on
       {
@@ -1804,6 +2153,13 @@ messages:
       if IsClass(poOwner,&OutOfGrace)
       {
          Send(self,@MsgSendUser,#message_rsc=user_cant_suicide_OOG);
+
+         return;
+      }
+
+      if Send(Send(SYS,@GetCaramo),@GetJusticar) = self
+      {
+         Send(self,@MsgSendUser,#message_rsc=user_cant_suicide_justicar);
 
          return;
       }
@@ -2686,37 +3042,19 @@ messages:
 
    UserGotoDeadRoom()
    {
-      local oNew_room, iRoom, oRoom;
+      local oNew_room;
 
       if pbLogged_On
       {
-         iRoom = Send(poOwner,@GetRoomNum);
-      
-         if iRoom >= RID_NEWB_BASE AND iRoom <= RID_NEWB_MAX
+         oNew_room = Send(SYS,@FindRoomByNum,#num=RID_UNDERWORLD);
+         if NOT Send(SYS,@UtilGoNearSquare,#what=self,#where=oNew_room,
+                     #new_row=24,#new_col=10,
+                     #fine_row=38,#fine_col=54,#new_angle=3072)
          {
-            Send(self,@TeleportTo,#RID=RID_NEWB1,#bAdminPort=FALSE);
+            Debug("UserGotoDeadRoom unable to Send user to dead room",
+                  self,vrName);
+            return Send(SYS,@GetFailureRsc);
          }
-         else
-         {
-            oNew_room = Send(SYS,@FindRoomByNum,#num=RID_UNDERWORLD);
-            if NOT Send(SYS,@UtilGoNearSquare,#what=self,#where=oNew_room,
-                        #new_row=24,#new_col=10,
-                        #fine_row=38,#fine_col=54,#new_angle=3072)
-            {
-               Debug("UserGotoDeadRoom unable to Send user to dead room",
-                     self,vrName);
-               return Send(SYS,@GetFailureRsc);
-            }
-         }
-      }
-      else if piSave_Room >= RID_NEWB_BASE AND piSave_Room <= RID_NEWB_MAX
-      {
-         Debug("Player died while offline, but in newbie area!  (how did "
-                "a necromancer get there?):",Send(self,@GetTrueName));
-         piSave_Room = RID_NEWB1;
-         oRoom = Send(SYS,@FindRoomByNum,#num=RID_NEWB1);
-         piSave_Row = Send(oRoom,@GetTeleportRow);
-         piSave_Col = Send(oRoom,@GetTeleportCol);
       }
       else
       {
@@ -3050,8 +3388,6 @@ messages:
    {
       local i, lUsers, rName, bVisible;
 
-      lUsers = $;
-
       foreach i in Send(SYS,@GetUsersLoggedOn)
       {
          bVisible = FALSE;
@@ -3061,26 +3397,15 @@ messages:
          {
             bVisible = TRUE;
          }
-         % escaped convict can see self and fellow convicts
-         else if (IsClass(self,&EscapedConvict) AND IsClass(i,&EscapedConvict))
+         else if (IsClass(i,&DM) AND Send(i,@IsHidden))
          {
-            bVisible = TRUE;
+            bVisible = FALSE;
          }
          else
          {
-            % self is a regular user, here is where to start hiding special
-            % players like escaped convict and hidden DMs
-            if (IsClass(i,&EscapedConvict)
-               OR (IsClass(i,&DM) AND Send(i,@IsHidden)))
-            {
-               bVisible = FALSE;
-            }
-            else
-            {
-               bVisible = TRUE;
-            }
+            bVisible = TRUE;
          }
-            
+
          if (bVisible)
          {
             lUsers = Cons(i,lUsers);
@@ -3976,27 +4301,35 @@ messages:
 
    UserAppeal(string = $, first_time = FALSE)
    {
-      local i, lUsers;
+      local i;
 
-      lUsers = Send(SYS,@GetUsersLoggedOn);
-      foreach i in lUsers
+      // Can't send appeals if squelched.
+      if (NOT first_time
+         AND (piFlags2 & PFLAG2_SQUELCHED_APPEAL))
       {
-         if IsClass(i,&DM) AND Send(i,@IsAppealOn)
+         Send(self,@MsgSendUser,#message_rsc=user_appeal_squelched);
+         return;
+      }
+
+      foreach i in Send(SYS,@GetUsersLoggedOn)
+      {
+         if (first_time)
          {
-            if NOT first_time
-            {
-               Send(i,@MsgSendUser,#message_rsc=user_appeal,#parm1=vrName,
-                    #parm2=string);
-            }
-            else
+            if (Send(SETTINGS_OBJECT,@MessageAllForNewUser)
+               OR (IsClass(i,&DM) AND Send(i,@IsAppealOn)))
             {
                Send(i,@MsgSendUser,#message_rsc=user_first_time_appeal,
-                    #parm1=vrName);
+                     #parm1=vrName);
             }
+         }
+         else if (IsClass(i,&DM) AND Send(i,@IsAppealOn))
+         {
+            Send(i,@MsgSendUser,#message_rsc=user_appeal,#parm1=vrName,
+                  #parm2=string);
          }
       }
 
-      if IsClass(self,&DM) OR first_time
+      if first_time OR IsClass(self,&DM)
       {
          % Don't tell DMs and Admins that the appeal was heard,
          %  since this is always true.
@@ -5048,7 +5381,7 @@ messages:
 
       if type = SAY_MESSAGE
       {
-         if Send(self,@IsActor)
+         if IsClass(self,&DM)
          {
             Send(poOwner,@SomeoneSaidRoom,#what=self,#type=type,
                  #string=user_echo_str,#parm1=string);
@@ -5599,6 +5932,13 @@ messages:
       if pbLogged_on
          AND (Send(what,@GetNewsPermission,#what=self) & NEWS_PERMISSION_READ)
       {
+         if NOT Send(poOwner,@LineOfSight,#obj1=self,#obj2=what)
+         {
+            Send(self,@MsgSendUser,#message_rsc=user_news_los);
+
+            return FALSE;
+         }
+
          AddPacket(1,BP_LOOK_NEWSGROUP);
          AddPacket(2,Send(what,@GetNewsNum));
          AddPacket(1,Send(what,@GetNewsPermission,#what=self));
@@ -5726,14 +6066,14 @@ messages:
    {
       local oUser, lNames, oMailingList;
 
-      if StringEqual(string,user_guild_rsc)
+      if StringEqual(string,system_guild_rsc)
          AND poGuild <> $
       {
          AddPacket(4,poGuild);
       }
       else
       {
-         % don't enable mailing lists yet
+         // TODO: enable guild officer mailing lists.
          if FALSE AND StringEqual(string,user_guildofficer_rsc)
             AND poGuild <> $
          {
@@ -5857,6 +6197,14 @@ messages:
       %{
       %   Send(self,@NotifyMonstersOfPresence);
       %}
+
+      // Can't send mail if squelched.
+      if piFlags2 & PFLAG2_SQUELCHED_MAIL
+      {
+         Send(self,@MsgSendUser,#message_rsc=user_mail_squelched);
+
+         return;
+      }
 
       if StringLength(string) > MAIL_MESSAGE_MAX_LENGTH
       {
@@ -7583,7 +7931,6 @@ messages:
       {
          if oOldRoom <> $
          {
-            Send(self,@CheckLeavingNewbieOrGuest,#leaving=oOldRoom);
             Send(self,@CheckTokenInNewRoom,#what=oOldRoom);
          }
 
@@ -8420,22 +8767,13 @@ messages:
 
    SendStatCapacity()
    {
-      local iCapacity_send, iMaxCapacity_send;
+      local iCapacity_send;
 
       iCapacity_send = Send(self,@GetWeightHold);
 
-      % GetWeightMax returns NIL in dm.kod, 3100 is capacity at 70 might
-      if IsClass(self,&DM)
-      {
-         iMaxCapacity_send = 3100;
-      }
-      else
-      {
-         iMaxCapacity_send = Send(self,@GetWeightMax);
-      }
-
       AddPacket(1,9, 4,user_stat_capacity, 1,STAT_VALUE, 1,STAT_INTEGER,
-                4,iCapacity_send, 4,0, 4,iMaxCapacity_send, 4,iCapacity_send);
+                4,iCapacity_send, 4,0, 4,Send(self,@GetWeightMax),
+                4,iCapacity_send);
 
       return;
    }
@@ -8454,22 +8792,12 @@ messages:
    
    SendStatBulk()
    {
-      local iBulk, iBulkMax;
+      local iBulk;
 
       iBulk = Send(self,@GetBulkHold);
 
-      % GetBulkMax returns NIL in dm.kod, 3100 is capacity at 70 might
-      if IsClass(self,&DM)
-      {
-         iBulkMax = 3100;
-      }
-      else
-      {
-         iBulkMax = Send(self,@GetBulkMax);
-      }
-
       AddPacket(1,10, 4,user_stat_bulk, 1,STAT_VALUE, 1,STAT_INTEGER,
-                4,iBulk, 4,0, 4,iBulkMax, 4,iBulk);
+                4,iBulk, 4,0, 4,Send(self,@GetBulkMax), 4,iBulk);
 
       return;
    }
@@ -9639,68 +9967,6 @@ messages:
       return;
    }
 
-   IsActor()
-   {
-      return FALSE;
-   }
-
-   LeaveNewbieOrGuestRegion()
-   {
-      % Delete their inventory?
-      if Send(SETTINGS_OBJECT, @CleanNewbieInventoryOnEnteringRealWorld)
-      {
-         Send(self,@StripInventory);
-      }
-
-      return;
-   }
-
-   EnterNewbieOrGuestRegion()
-   {
-      % We used to erase inventory here.  Seems dangerous to irrevocably do this.
-      return;
-   }
-
-   CheckLeavingNewbieOrGuest(leaving=$)
-   {
-      local oldregion, region;
-
-      % We're potentially changing rooms here. poOwner is already set to new
-      %  room.
-      if leaving = poOwner OR Send(self,@PlayerIsImmortal)
-      {
-         return FALSE;
-      }
-
-      oldregion = Send(leaving,@GetRegion);
-      region = Send(poOwner,@GetRegion);
-
-      if region = oldregion
-      {
-         if region = RID_NEWB_BASE
-            OR region = RID_GUEST_BASE
-         {
-            Send(self,@SetInitialHomeroom);
-         }
-         
-         return FALSE;
-      }
-
-      if oldregion = RID_NEWB_BASE
-         OR oldregion = RID_GUEST_BASE
-      {
-         Send(self,@LeaveNewbieOrGuestRegion);
-      }
-
-      if region = RID_NEWB_BASE
-         OR region = RID_GUEST_BASE
-      {
-         Send(self,@EnterNewbieOrGuestRegion);
-      }
-
-      return TRUE;
-   }
-
    AddCurrentQuest(node = $, template = $)
    "Adds a quest to the user's plActiveQuests list.  Each element in "
    "this list is a quest template ID followed by the current active "
@@ -10093,19 +10359,19 @@ messages:
       {
          piSave_room = rid;
       }
-      
+
       if row <> $
       {
          piSave_row = row;
          piSave_fine_row = FINENESS/2;
       }
-      
+
       if col <> $
       {
          piSave_col = col;
          piSave_fine_col = FINENESS/2;
       }
-      
+
       return;
    }
 
@@ -10115,57 +10381,57 @@ messages:
       {
          return $;
       }
-      
+
       return piSave_room;
    }
-   
+
    GetSaveRow()
    {
       if pbLogged_on
       {
          return $;
       }
-      
+
       return piSave_row;
    }
-   
+
    GetSaveCol()
    {
       if pbLogged_on
       {
          return $;
       }
-      
+
       return piSave_Col;
    }
-   
+
    GetSaveFineRow()
    {
       if pbLogged_on
       {
          return $;
       }
-      
+
       return piSave_Fine_row;
    }
-   
+
    GetSaveFineCol()
    {
       if pbLogged_on
       {
          return $;
       }
-      
+
       return piSave_Fine_Col;
    }
-   
+
    GetSaveAngle()
    {
       if pbLogged_on
       {
          return $;
       }
-      
+
       return piSave_Angle;
    }
 
@@ -10174,7 +10440,6 @@ messages:
       local iCutoff_time, lRecent_mail, lNew_mail, iTime, iRemoved;
 
       iCutoff_time =  GetTime() - (iDays * DAY);
-      lRecent_mail = $;
       iRemoved = 0;
 
       foreach lNew_mail in plNew_mail
@@ -10237,25 +10502,23 @@ messages:
    {
       return GetSessionIP(poSession);
    }
-   
+
    GetIPString()
    "returns ip as a string.  Use this sparingly and only if"
    "you need the human readable string, use the list returned by"
    "GetIP() for comparisons"
    {
       local sReturn, lIP;
-      
+
       lIP = GetSessionIP(poSession);
       if (lIP = $)
       {
          return;
       }
 
-      sReturn = CreateString();
-      
       ClearTempString();
-      
-      AppendTempString(Nth(lIP,1));
+
+      AppendTempString(First(lIP));
       AppendTempString(":");
       AppendTempString(Nth(lIP,2));
       AppendTempString(":");
@@ -10287,10 +10550,7 @@ messages:
       AppendTempString(":");
       AppendTempString(Nth(lIP,16));
 
-      SetString(sReturn,GetTempString());
-      
-      return sReturn;
-   
+      return SetString($,GetTempString());
    }
 
    SendStatChange()
@@ -10303,21 +10563,20 @@ messages:
       {
          return;
       }
-      
+
       % must have a token if over the free stat reset cap
       if Send(self,@FindHolding,#class=&StatsResetToken) = $
          AND (piBase_Max_Health > Send(SETTINGS_OBJECT,@GetFreeStatsResetCap))
       {
          return;
       }
-      
+
       lSpellLevels = Send(self, @GetSpellSchoolLevels);
       lSkillLevels = Send(self, @GetSkillSchoolLevels);
- 
+
       % TODO: don't load module if it is already loaded
-
-
       Send(self,@UserLoadModule,#module=user_statchange_module);
+
       AddPacket(1,BP_STAT_CHANGE, 1,piMight, 1,piIntellect, 1,piStamina,
                 1,piAgility, 1,piMysticism, 1,piAim, 1,First(lSpellLevels),
                 1,Nth(lSpellLevels,2), 1,Nth(lSpellLevels,3),
@@ -10333,10 +10592,9 @@ messages:
                      riija_lvl=0,jala_lvl=0,weaponcraft_lvl=0)
    "Processes a stat change request from the client"
    {
-      local i,lSpellLevels,lSkillLevels,lSpellLevels_new,lSkillLevels_new,
-            totalLevels,totalSchools,totalLvlOnes,iPrimaryStat,
-            oSpell,iSpellAbility,iSpellNum,
-            oSkill,iSkillAbility,iSkillNum;
+      local i, lSpellLevels, lSkillLevels, lSpellLevels_new, lSkillLevels_new,
+            totalLevels, totalSchools, totalLvlOnes, iPrimaryStat, oSpell,
+            iSpellAbility, iSpellNum, oSkill, iSkillAbility, iSkillNum;
 
       % if stats reset is turned off, ignore the request
       if NOT Send(SETTINGS_OBJECT,@GetStatsResetEnabled)
@@ -10587,37 +10845,15 @@ messages:
          piMight, piIntellect, piStamina, piAgility, piMysticism, piAim,
          " to ", might, intellect, stamina, agility, mysticism, aim);
 
-      // Now set the stats. If they are changing stamina, and they have extra
-      // levels (XP) above their max HP, have to reset XP to their current
-      // level.
-      if (piStamina <> stamina
-         AND piBase_Max_Health > Send(self,@GetBaseMaxHealth))
-      {
-         Send(self,@ResetXPToLevel);
-      }
+      // Change stamina and check HP in a separate message, number of
+      // locals is getting too high in this one.
+      Send(self,@UserStatChangeStamina,#stamina=stamina);
 
-      piStamina = stamina;
       piIntellect = intellect;
       piMight = might;
       piAgility = agility;
       piMysticism = mysticism;
       piAim = aim;
-
-      // A change in stamina results in a reduction in hitpoints if the
-      // player's hitpoints will be > 100 + new Stamina
-      if (piBase_Max_Health > 100 + piStamina + Bound(piStaminaMod,0,$))
-      {
-         // If they dropped stamina, set max HP to their max. This can
-         // remove extra invisible 'levels', so players at max HP should
-         // not modify their stamina.
-         piBase_Max_Health = 100 + piStamina + Bound(piStaminaMod,0,$);
-         Send(self,@NewHealth);
-
-         // Check XP again.
-         Send(self,@ResetXPToLevel);
-
-         Debug("HitPoints and XP Adjusted");
-      }
 
       % recalculate mana pool based on nodes and mysticism
       Send(self,@ComputeMaxMana);
@@ -10628,6 +10864,35 @@ messages:
       % Refresh the client screen so they see the new stats
       Send(self, @InvalidateData);
       Debug("Player Updated!");
+
+      return;
+   }
+
+   UserStatChangeStamina(stamina = $)
+   {
+      local iMaxHP, iNewMaxHP;
+
+      if (stamina = $)
+      {
+         Debug("UserStatChangeStamina sent $ stamina for ",self);
+
+         return;
+      }
+
+      // Get the old max HP before adjusting stamina.
+      iMaxHP = Send(self,@GetBaseMaxHealth);
+
+      piStamina = stamina;
+
+      iNewMaxHP = Send(self,@GetBaseMaxHealth);
+
+      // Set their max health to the correct level.
+      if (iMaxHP <> iNewMaxHP)
+      {
+         Send(self,@GainMaxHealth,#amount=iNewMaxHP - iMaxHP);
+         Send(self,@NewHealth);
+         Debug("HP Recalculated");
+      }
 
       return;
    }

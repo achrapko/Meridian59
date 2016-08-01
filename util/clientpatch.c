@@ -29,7 +29,7 @@ static std::string client_path;
 ExtList extensions { ".bgf", ".ogg", ".roo", ".dll", ".rsb", ".exe", ".bsf",
                      ".ttf", ".zip", ".font", ".md", ".png", ".material",
                      ".hlsl", ".dds", ".mesh", ".xml", ".pu", ".compositor",
-                     ".imageset", ".layout", ".looknfeel", ".scheme", ".avi" };
+                     ".imageset", ".layout", ".looknfeel", ".scheme", ".avi", ".otf" };
 
 bool FindMatchingFiles(std::string path, FileList *files);
 /***************************************************************************/
@@ -39,11 +39,33 @@ void Usage(void)
    exit(1);
 }
 /***************************************************************************/
+double GetMicroCountDouble()
+{
+   static LARGE_INTEGER microFrequency;
+   LARGE_INTEGER now;
+
+   if (microFrequency.QuadPart == 0)
+      QueryPerformanceFrequency(&microFrequency);
+
+   if (microFrequency.QuadPart == 0)
+   {
+      printf("GetMicroCount can't get frequency\n");
+      return 0;
+   }
+
+   QueryPerformanceCounter(&now);
+   return ((double)now.QuadPart * 1000.0) / (double)microFrequency.QuadPart;
+}
+/***************************************************************************/
 int main(int argc, char **argv)
 {
    FileList files; // Data structure for fullpath, basepath, filename.
    json_t *FileArray; // Array of JSON objects.
-   FileArray = json_array(); // Init the array.
+   json_t *ExecArray; // Separate array for executables.
+   char *strptr;
+   // Init the arrays.
+   FileArray = json_array();
+   ExecArray = json_array();
 
    if (argc != CPH_NUM_ARGUMENTS)
       Usage();
@@ -55,19 +77,42 @@ int main(int argc, char **argv)
    if (client_path.back() != '\\')
       client_path.append("\\");
 
+   // Record start time.
+   double startTime = GetMicroCountDouble();
+
    // Get the path length, used to create relative path later.
    base_path_len = client_path.length() - 1;
    printf("Scanning, please wait...\n");
+
    if (FindMatchingFiles(client_path, &files))
    {
       // Iterate through our found files, create JSON objects and add to array.
       for (FileList::iterator it = files.begin(); it != files.end(); ++it)
-         json_array_append(FileArray, GenerateCacheFile(std::get<0>(*it).c_str(),
-            std::get<1>(*it).c_str(), std::get<2>(*it).c_str()));
+      {
+         // Add executables to a separate array, because we want them
+         // at the end of the JSON array printed to file. Means that
+         // during the update process, the last thing updated are
+         // client executables.
+         strptr = strrchr((char *)std::get<2>(*it).c_str(), '.');
+         if (!strptr)
+            continue;
+         if (stricmp(strptr, ".exe") == 0)
+            json_array_append(ExecArray, GenerateCacheFile(std::get<0>(*it).c_str(),
+               std::get<1>(*it).c_str(), std::get<2>(*it).c_str()));
+         else
+            json_array_append(FileArray, GenerateCacheFile(std::get<0>(*it).c_str(),
+               std::get<1>(*it).c_str(), std::get<2>(*it).c_str()));
+      }
+      // Join the arrays
+      if (json_array_size(ExecArray) > 0)
+         json_array_extend(FileArray, ExecArray);
+
       // Print the file to the give patchinfo.txt.
       json_dump_file(FileArray, patchinfo_path.c_str(), JSON_INDENT(1));
       printf("Successfully added %i files.\n", files.size());
    }
+
+   printf("Scanning completed in %.3f ms.\n", GetMicroCountDouble() - startTime);
 }
 
 bool FindMatchingFiles(std::string path, FileList *files)
@@ -112,6 +157,8 @@ bool FindMatchingFiles(std::string path, FileList *files)
       {
          // Get the extension, including '.' and check against extension list.
          strptr = strrchr(search_data.cFileName, '.');
+         if (!strptr)
+            continue;
          for (ExtList::iterator it = extensions.begin(); it != extensions.end(); ++it)
          {
             // If we match an extension, add to the FileList structure.

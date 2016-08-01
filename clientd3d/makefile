@@ -25,8 +25,8 @@ LIBS = \
     user32.lib gdi32.lib comdlg32.lib shell32.lib \
     ws2_32.lib comctl32.lib advapi32.lib \
     winmm.lib wininet.lib ole32.lib \
-    d3d9.lib dxerr.lib irrklang.lib \
-    rscload.lib libpng.lib zlib.lib libarchive.lib jansson.lib
+    d3d9.lib dxerr.lib d3dx9.lib irrklang.lib \
+    rscload.lib libpng.lib zlib.lib libarchive.lib
 
 DEFFILE  = $(SOURCEDIR)\client.def
 
@@ -139,10 +139,10 @@ $(OUTDIR)\pal.c: $(OUTDIR)\makepal.exe $(PALETTEFILE)
 	$(OUTDIR)\makepal $(PALETTEFILE) $(OUTDIR)
 
 $(OUTDIR)\crc.obj : $(TOPDIR)\util\crc.c
-	$(CC) -Fo$(OUTDIR)/ $(CFLAGS) /Fd$(OUTDIR)\vc90.pdb /FpCpch -c $**
+	$(CC) -Fo$(OUTDIR)/ $(CFLAGS) /Fd$(OUTDIR)\ /FpCpch -c $**
 
 $(OUTDIR)\md5.obj : $(TOPDIR)\util\md5.c
-	$(CC) -Fo$(OUTDIR)/ $(CFLAGS) /Fd$(OUTDIR)\vc90.pdb /FpCpch -c $**
+	$(CC) -Fo$(OUTDIR)/ $(CFLAGS) /Fd$(OUTDIR)\ /FpCpch -c $**
 
 $(OUTDIR)\meridian.exe: $(OBJS) $(DEFFILE) $(OUTDIR)\client.res
 	$(LINK) $(LINKFLAGS) @<<
@@ -150,7 +150,7 @@ $(OBJS) $(LIBS) -def:$(DEFFILE) $(OUTDIR)\client.res -OUT:$@
 <<
 	$(CP) $(OUTDIR)\meridian.lib $(BLAKLIBDIR)
 	$(CP) $@ $(CLIENTRUNDIR)
-   $(CP) $(BLAKBINDIR)\jansson.dll $(CLIENTRUNDIR) >nul
+
 $(OUTDIR)\maketrig.exe: $(OUTDIR)\maketrig.obj
 	$(LINK) $** -out:$@ $(LINKFLAGSCONSOLE)
 	$(CP) $@ $(BLAKBINDIR) 

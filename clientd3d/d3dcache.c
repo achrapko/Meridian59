@@ -112,7 +112,7 @@ LPDIRECT3DTEXTURE9 D3DCacheTextureLookupSwizzled(d3d_texture_cache *pTextureCach
 		}
 	}
 
-	pTexture = D3DRenderTextureCreateFromBGFSwizzled(pPacket->pDib, pPacket->xLat0,
+	pTexture = D3DRenderTextureCreateFromBGF(pPacket->pDib, pPacket->xLat0,
 			pPacket->xLat1, effect);
 
 	if (NULL == pTexture)
@@ -485,8 +485,10 @@ void D3DCacheFill(d3d_render_cache_system *pCacheSystem, d3d_render_pool_new *pP
 		}
 	}
 
-	if (pRenderCache)
-		CACHE_UNLOCK(pRenderCache);
+   if (pRenderCache)
+   {
+      CACHE_UNLOCK(pRenderCache);
+   }
 }
 
 void D3DCacheFlush(d3d_render_cache_system *pCacheSystem, d3d_render_pool_new *pPool, int numStages,

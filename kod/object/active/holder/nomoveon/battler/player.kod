@@ -321,7 +321,7 @@ resources:
    player_dot = "."
 
    % Master fixed info resource.
-   player_fixed_info = "%r%r%s%r%s%q%r"
+   player_fixed_info = "%r%r%s%s%r%s%q%r"
 
    % Hometown strings.
    player_hometown_rsc = "%s%s%s%q%s\n"
@@ -331,7 +331,6 @@ resources:
    player_citizen_jasper = " has called Jasper home"
    player_citizen_marion = " has been a Marionite"
    player_citizen_raza = " is of Raza"
-   player_citizen_hazar = " is of Hazar"
    player_citizen_kocatan = " has lived in Ko'catan"
    player_citizen_unknown = " has wandered"
    player_of = " of "
@@ -345,7 +344,7 @@ resources:
    player_is_wearing = "%s is wearing %s%s.\n"
    player_donation_title = "Noble benefactor of Meridian in %q."
    player_donation_separator = ", "
-   player_is_justicar = "Elected Royal Justicar of the Meridian."
+   player_is_justicar = "Elected Royal Justicar of the Meridian.\n"
 
    player_known_for_mastery = "Known far and wide for mastery of "
    player_and = " and "
@@ -598,12 +597,20 @@ resources:
       "the bankers, the innkeepers.  Ask them for help.  Sometimes, they "
       "may even wish for you to run an errand for them if you ask."
       "\n\n"
-      "For your first quest, you may wish to research which hometown you were "
-      "born in.  You can ask any of the towns' people you meet for their "
-      "opinions about the different towns.  To permanently select a hometown, "
-      "you need to adventure to the Hall of Genealogy in the town of Cor Noth "
-      "and look through the books there.  Take your time selecting your "
-      "hometown, as it may determine how other people interact with you."
+      "No matter if warrior or mage, every adventurer needs a town he can call "
+      "home. New souls to these lands find a temporary refuge in Raza, but only "
+      "few feel a true connection to this place. An adventurer's choice of home "
+      "has far-reaching consequences after all - and Raza may not be the most "
+      "beneficial one. For this reason, you may want to set off on a quest to "
+      "find a fitting base of operations for your future endeavors and declare "
+      "one of the cities in Meridian your home.  There should be no doubt that "
+      "such a choice must be carefully considered. It might be helpful to seek "
+      "the locals' advice and ask them for their opinion on the various cities "
+      "of the realm before you make your decision a final one. Once you have "
+      "come to a conclusion, it is time to prepare for a journey to the city of "
+      "Cor Noth. There, you will find the Hall of Genealogy, where you can vow "
+      "your allegiance to a city of your choosing and become a permanent "
+      "citizen, with all of the attached benefits - and drawbacks."
       "\n\n"
       "Death is unkind to you - avoid it!  A death can make you weaker, and "
       "all of your possessions are left where you met your demise, where any "
@@ -784,7 +791,7 @@ resources:
    player_truced = "Shal'ille's magic compels you to respect the truce."
 
    Jig_cannot_attack = \
-      "It wouldn't feel right to attack the %s while you two are "
+      "It wouldn't feel right to attack %s%s while you two are "
       "dancing so well together!"
 
    phased_out_cant_use = \
@@ -1160,7 +1167,10 @@ messages:
 
       if ptTempSafe <> $
       {
-         DeleteTimer(ptTempSafe);
+         if (IsTimer(ptTempSafe))
+         {
+            DeleteTimer(ptTempSafe);
+         }
          ptTempSafe = $;
       }
 
@@ -1210,6 +1220,18 @@ messages:
    }
 
    %%% Player flags
+
+   SetDMFlag()
+   {
+      Debug("Tried to set DM flag on player ",Send(self,@GetTrueName));
+
+      return;
+   }
+
+   CheckDMFlag()
+   {
+      return 0;
+   }
 
    SetPlayerFlag(flag=0,value=FALSE,flagset=1)
    "This always requires the POSITIVE flag name."
@@ -1984,11 +2006,8 @@ messages:
       {
          switch(Send(self,@GetHomeRoom))
          {
-            case RID_NEWB1:
+            case RID_RAZA_INN:
                j = player_citizen_raza;
-               break;
-            case RID_GUEST1:
-               j = player_citizen_hazar;
                break;
             case RID_BAR_INN:
                j = player_citizen_barloque;
@@ -2087,6 +2106,17 @@ messages:
          AddPacket(4,system_blank_resource);
       }
 
+      obj = Send(SYS,@GetCaramo);
+      if (obj <> $
+         AND Send(obj,@GetJusticar) = self)
+      {
+         AddPacket(4, player_is_justicar);
+      }
+      else
+      {
+         AddPacket(4,system_blank_resource);
+      }
+
       %
       % Add visible cargo types. The number of these doesn't really change,
       % but this section has error checking anyway just in case we change it.
@@ -2136,12 +2166,12 @@ messages:
             {
                if IsClass(obj,&Ring)
                {
-                  AddPacket(4,player_is_wearing, 4,Send(self,@GetHeShe,#cap=True),
+                  AddPacket(4,player_is_wearing, 4,Send(self,@GetHeShe,#cap=TRUE),
                             4,Send(obj,@GetIndef), 4,Send(obj,@GetName));
                }
                else
                {
-                  AddPacket(4,player_is_holding, 4,Send(self,@GetHeShe,#cap=True),
+                  AddPacket(4,player_is_holding, 4,Send(self,@GetHeShe,#cap=TRUE),
                             4,Send(obj,@GetIndef), 4,Send(obj,@GetName));
                }
             }
@@ -2253,7 +2283,7 @@ messages:
 
    UserLogonHook()
    {
-      local i, oGame, oParl, iBonus, iDefaultBonus, iTimespan;
+      local i, oObj, iBonus, iDefaultBonus, iTimespan;
 
       SendList(plPassive, 0, @UserLogon);
       SendList(plActive, 0, @UserLogon);
@@ -2264,11 +2294,11 @@ messages:
 
       Send(self,@SendUserAllWindowOverlays);
 
-      oParl = Send(SYS,@GetParliament);
-      if oParl <> $
+      oObj = Send(SYS,@GetParliament);
+      if oObj <> $
       {
          if piFaction <> FACTION_NEUTRAL 
-            AND (NOT Send(oParl,@IsShutdown))
+            AND (NOT Send(oObj,@IsShutdown))
          {
             piFactionTimeUpdated=GetTime();
             Send(self,@FactionServiceTimer);
@@ -2276,17 +2306,23 @@ messages:
 
          if Send(self,@PlayerIsIntriguing)
          {
-            Send(oParl,@UpdateEffects,#who=self); 
+            Send(oObj,@UpdateEffects,#who=self); 
          }
       }
 
-      oGame = Send(SYS,@GetAssassinGame);
-      if oGame <> $
-         AND Send(oGame,@InAcceptMode)
-         AND (NOT Send(oGame,@IsCombatant,#who=self))
-         AND Send(oGame,@IsAdvertised,#who=self)
+      oObj = Send(SYS,@GetAssassinGame);
+      if oObj <> $
+         AND Send(oObj,@InAcceptMode)
+         AND (NOT Send(oObj,@IsCombatant,#who=self))
+         AND Send(oObj,@IsAdvertised,#who=self)
       {
          Send(self,@MsgSendUser,#message_rsc=player_assgame_soon);
+      }
+
+      oObj = Send(SYS,@GetCaramo);
+      if oObj <> $
+      {
+         Send(oObj,@UserLogon,#who=self);
       }
 
       if poGuild <> $
@@ -2296,8 +2332,7 @@ messages:
 
       if ptTempSafe <> $
       {
-         piFlags = piFlags | PFLAG_TEMPSAFE;
-         Send(self,@MsgSendUser,#message_rsc=player_temp_safe);
+         Send(self,@UnpauseTempSafe);
       }
 
       if piPoisonStrength > 0
@@ -2309,10 +2344,10 @@ messages:
 
       Send(self,@SetPlayerFlag,#flag=PFLAG_MOVED_SINCE_ENTRY,#value=FALSE);
 
-      % If we log into the Raza/Hazar inn and aren't past the tutorial,
-      %   then give us a commands list.
-      if IsClass(poOwner,&Guest1)
-         OR (IsClass(poOwner,&Newb1)
+      // If we log into the Raza inn and aren't past the tutorial,
+      // then give us a commands list.
+      // TODO: update this to not require a room check.
+      if (IsClass(poOwner,&RazaInn)
             AND NOT (piFlags & PFLAG_TUTORIAL))
       {
          Post(self,@MsgSendUser,#message_rsc=player_newbie_commands);
@@ -2333,14 +2368,14 @@ messages:
       % Reward people for logging on by granting them some free training points!
       % We take the absolute value to automatically fix bugs with people
       % mysteriously ending up with a timestamp in the distant future.
-      iTimespan = abs(GetTime() - piReward_timestamp);
+      iTimespan = Abs(GetTime() - piReward_timestamp);
 
       % We restrict the timespan to reasonable limits here since the bonus to
       % training points scales with the time since the last bonus has been
       % received. 36 hours means that players have a decent leeway to log on
       % again before missing out on training points, but are still encouraged
       % to log on daily to cash in maximum points.
-      iTimespan = bound(iTimespan,0,36*60*60);
+      iTimespan = Bound(iTimespan,0,36*60*60);
 
       if iTimespan > 16*60*60
       {
@@ -2351,11 +2386,11 @@ messages:
 
          % Retrieve the daily logon bonus from settings.
          iDefaultBonus = Send(SETTINGS_OBJECT,@GetLogonBonus);
-         
+
          % Scale the logon bonus with the time that has passed since it has last
          % been received for a total bonus of up to 150 percent.
          iBonus = iDefaultBonus * iTimespan / (24*60*60);
-         
+
          Send(self,@MsgSendUser,#message_rsc=player_logon_bonus,#parm1=iBonus);
          Send(self,@AddTrainingPoints,#points=iBonus,#report=FALSE);
 
@@ -2412,6 +2447,11 @@ messages:
       {
          DeleteTimer(ptReward_timer);
          ptReward_timer = $;
+      }
+
+      if (ptTempSafe <> $)
+      {
+         Send(self,@PauseTempSafe);
       }
 
       Send(self,@CancelRescue);
@@ -2522,7 +2562,6 @@ messages:
          AND iHair_translation <> PT_GRAY_TO_KGRAY
          AND iHair_translation <> PT_GRAY_TO_BLACK
          AND iHair_translation <> PT_GRAY_TO_BLOND
-         AND iHair_translation <> PT_GRAY_TO_LSKY
       {
          % if they hacked char.dll...
          iHair_translation = PT_GRAY_TO_BLOND;
@@ -2741,6 +2780,7 @@ messages:
       % Give them a new start on life, so that their newbie
       % friends can buff and heal them.
       piTimeAttackedPlayer = 0;
+      piTimeAttackedByPlayer = 0;
 
       return;
    }
@@ -3129,21 +3169,13 @@ messages:
 
    GetBaseMaxHealth()
    {
-      local iApparentStamina;
+      local iStamina;
 
-      if piStaminaMod >= 0
-      {
-         iApparentStamina = Send(self,@GetStamina);
-      }
-      else
-      {
-         iApparentStamina = Send(self,@GetRawStamina);
-      }
+      iStamina = Send(self,@GetStamina);
 
       // Bound twice - once for max HP this player can get, once for
       // max HP allowable by the game.
-      return Bound(Bound(piBase_max_health,MIN_HP,(100 + iApparentStamina)),
-                  MIN_HP,MAX_HP);
+      return Bound(Bound(piBase_max_health,MIN_HP,100 + iStamina),MIN_HP,MAX_HP);
    }
 
    GetUncappedBaseMaxHealth()
@@ -4366,15 +4398,31 @@ messages:
             OR IsClass(victim,&EvilTwin)
             OR Send(victim,@GetMaster) <> $
          {
-            if NOT (piFlags & PFLAG_PKILL_ENABLE)
+            if (Send(victim,@IsOwnedByPlayer))
             {
-               if report
+               // Newbies can't attack players' pets.
+               if (NOT (piFlags & PFLAG_PKILL_ENABLE))
                {
-                  Send(self,@MsgSendUser,
-                        #message_rsc=player_cant_hit_newbie_minion);
+                  if (report)
+                  {
+                     Send(self,@MsgSendUser,
+                           #message_rsc=player_cant_hit_newbie_minion);
+                  }
+
+                  return FALSE;
                }
 
-               return FALSE;
+               // No attacking players' pets on Sacred Haven.
+               if (NOT Send(SYS,@IsPKAllowed))
+               {
+                  if (report)
+                  {
+                     Send(self,@MsgSendUser,#message_rsc=player_guardian_angel,
+                          #parm1=Send(victim,@GetDef),#parm2=Send(victim,@GetName));
+                  }
+
+                  return FALSE;
+               }
             }
 
             if Send(victim,@GetMaster) = self
@@ -4406,20 +4454,7 @@ messages:
             if report
             {
                Send(self,@MsgSendUser,#message_rsc=Jig_cannot_attack,
-                     #parm1=Send(victim,@GetName));
-            }
-
-            return FALSE;
-         }
-
-         % No attacking pets on Sacred Haven
-         if NOT Send(SYS,@IsPKAllowed)
-            AND Send(victim,@GetMaster) <> $
-         {
-            if report
-            {
-               Send(self,@MsgSendUser,#message_rsc=player_guardian_angel,
-                    #parm1=Send(victim,@GetDef),#parm2=Send(victim,@GetName));
+                     #parm1=Send(victim,@GetDef),#parm2=Send(victim,@GetName));
             }
 
             return FALSE;
@@ -4596,18 +4631,15 @@ messages:
                   Send(self,@MsgSendUser,#message_rsc=player_guardian_angel,
                        #parm1=Send(victim,@GetDef),#parm2=Send(victim,@GetName));
                }
+               else if minion
+               {
+                  Send(self,@MsgSendUser,#message_rsc=player_safety_caught_minion,
+                        #parm1=Send(victim,@GetDef),#parm2=Send(victim,@GetName));
+               }
                else
                {
-                  if minion
-                  {
-                     Send(self,@MsgSendUser,#message_rsc=player_safety_caught_minion,
-                           #parm1=Send(victim,@GetDef),#parm2=Send(victim,@GetName));
-                  }
-                  else
-                  {
-                     Send(self,@MsgSendUser,#message_rsc=player_safety_caught,
-                           #parm1=Send(victim,@GetDef),#parm2=Send(victim,@GetName));
-                  }
+                  Send(self,@MsgSendUser,#message_rsc=player_safety_caught,
+                        #parm1=Send(victim,@GetDef),#parm2=Send(victim,@GetName));
                }
             }
 
@@ -4726,8 +4758,10 @@ messages:
 
       if bBooted
       {
-         % Check for safety before booting.
+         // On sacred haven servers, let users attack their own faction
+         // soldiers to drop shield and faction regardless of safety.
          if NOT Send(self,@CheckPlayerPreference,#flag=CF_SAFETY_OFF)
+            AND NOT (NOT Send(SYS,@IsPKAllowed) AND NOT IsClass(what,&User))
          {
             if report
             {
@@ -4808,6 +4842,7 @@ messages:
       if NOT Send(poOwner,@LineOfSight,#obj1=self,#obj2=what)
       {
          Send(self,@MsgSendUser,#message_rsc=player_attack_not_in_view);
+
          return FALSE;
       }
 
@@ -4846,21 +4881,17 @@ messages:
          {
             return FALSE;
          }
-         else
-         {
-            if NOT Send(self,@IsAffectedByRadiusEnchantment,#byClass=&Jig)
-            {
-               % Tell the monster this is a valid attack.
-               Send(what,@ValidAttack,#who=self);
-            }
-            else
-            {
-               Send(self,@MsgSendUser,#message_rsc=Jig_cannot_attack,
-                     #parm1=Send(what,@GetName));
 
-               return FALSE;
-            }
+         if Send(self,@IsAffectedByRadiusEnchantment,#byClass=&Jig)
+         {
+            Send(self,@MsgSendUser,#message_rsc=Jig_cannot_attack,
+                  #parm1=Send(what,@GetDef),#parm2=Send(what,@GetName));
+
+            return FALSE;
          }
+
+         % Tell the monster this is a valid attack.
+         Send(what,@ValidAttack,#who=self);
       }
 
       % Checking for legal PK attack here.
@@ -4872,17 +4903,9 @@ messages:
 
       % If this attack initiates pvp, notify victim (combatants maybe?) 
       % initially, but then not again until PVP_NOTIFY_DECAY has passed
-      
-      if IsClass(what,&User) 
-         AND Send(what, @GetLastPvpWarned) < GetTime() - PVP_NOTIFY_DECAY
+      if IsClass(what,&User)
       {
          Send(what,@DoPvpNotify);
-      }
-      
-      % Special stroke stuff 
-      if NOT Send(stroke_obj,@CheckSpecial,#who=self,#victim=what)
-      {
-         return FALSE;
       }
 
       % Okay, checking is done, attack is okay.  Do the animation thing.
@@ -6897,13 +6920,10 @@ messages:
             ptHealth = CreateTimer(self,@HealthTimer,Send(self,@CalculateHealthTime));
          }
       }
-      else
+      else if piHealth = piMax_health * 100
       {
-         if piHealth = piMax_health*100
-         {
-            DeleteTimer(ptHealth);
-            ptHealth = $;
-         }
+         DeleteTimer(ptHealth);
+         ptHealth = $;
       }
 
       Send(self,@DrawHealth);
@@ -7027,19 +7047,19 @@ messages:
 
       if number = $
       {
-         number = length(nodelist);
+         number = Length(nodelist);
       }
 
       count = 1;
 
-      while nodelist >=1
+      while nodelist >= 1
       {
          if ((nodelist/2)*2) <> nodelist  %we do an "# was odd" operator
          {
             Send(Send(SYS,@FindNodeByNum,#num=count),@UnMeld,#who=self);
          }
-         count = count*2;
-         nodelist = nodelist/2;
+         count = count * 2;
+         nodelist = nodelist / 2;
       }
 
       Send(self,@ResetNodeList);
@@ -7057,7 +7077,6 @@ messages:
          return;
       }
 
-      lNodes = $;
       index = 1;
       bFaerieNode = FALSE;
       bQNode = FALSE;
@@ -7070,16 +7089,13 @@ messages:
             {
                bFaerieNode = TRUE;
             }
+            else if index = NODE_Q
+            {
+               bQNode = TRUE;
+            }
             else
             {
-               if index = NODE_Q
-               {
-                  bQNode = TRUE;
-               }
-               else
-               {
-                  lNodes = cons(index,lNodes);
-               }
+               lNodes = Cons(index,lNodes);
             }
          }
 
@@ -7101,14 +7117,14 @@ messages:
 
       if lNodes
       {
-         index = Nth(lNodes,random(1,length(lNodes)));
+         index = Nth(lNodes,Random(1,Length(lNodes)));
          oNode = Send(SYS,@FindNodeByNum,#num=index);
          Send(oNode,@UnMeld,#who=self);
 
          if report
          {
             Post(self,@MsgSendUser,#message_rsc=player_lose_node,
-                 #parm1=Send(oNode,@GetLocationName));
+                  #parm1=Send(oNode,@GetLocationName));
          }
       }
 
@@ -7119,7 +7135,7 @@ messages:
 
    RemoveNodeFromList(node_num=0)
    {
-      piNodelist=piNodelist & ~node_num ;
+      piNodelist = piNodelist & ~node_num ;
 
       return;
    }
@@ -7127,6 +7143,28 @@ messages:
    ResetNodeList()
    {
       piNodelist = 0;
+
+      return;
+   }
+
+   AddManaNode(node_num=0)
+   "Used for manually adding nodes by node ID."
+   {
+      local oNode;
+
+      if (piNodelist & node_num)
+      {
+         return;
+      }
+
+      oNode = Send(SYS,@FindNodeByNum,#num=node_num);
+
+      if (oNode = $)
+      {
+         return;
+      }
+
+      Send(oNode,@Meld,#who=self);
 
       return;
    }
@@ -7177,7 +7215,7 @@ messages:
             piMax_mana = piMax_mana + Send(oNode,@GetManaAdjust,#who=self);
             iNodelist = iNodelist & ~index;
          }
-         index=index*2;
+         index = index*2;
       }
 
       % Account for any items that may affect max mana
@@ -7230,7 +7268,7 @@ messages:
       {
          if piNodelist & i
          {
-            n = n + 1;
+            ++n;
          }
 
          i = 2 * i;
@@ -7244,7 +7282,6 @@ messages:
    {
       return piNodelist;
    }
-
 
    GetSpellList()
    {
@@ -7558,14 +7595,6 @@ messages:
       % Also, no Karma change from event monsters: Xeos and admin-spawned.
       if (Send(SYS,@GetChaosNight) AND NOT bIsMob)
          OR karma_victim = $
-      {
-         return 0;
-      }
-
-      % No karma changes in the newbie area. Otherwise e.g. killing a negative
-      % karma monster may make your spell inoperable.
-      if poOwner <> $
-         AND Send(poOwner,@GetRegion) = RID_NEWB_BASE
       {
          return 0;
       }
@@ -8756,6 +8785,11 @@ messages:
       return;
    }
 
+   CanPlayerAdvanceOnMe()
+   {
+      return (Send(self,@FindUsing,#class=&Token) = $);
+   }
+
    AdvancementCheck(what=$,killing_blow=TRUE,group_member_kill=FALSE,group_member=$)
    "A player will need, on average, to kill a number of monsters equal to"
    "their maxhealth to gain a HP.  This number is reduced by the player's"
@@ -8778,7 +8812,8 @@ messages:
 
       if IsClass(what,&User)
       {
-         monster_level = Send(what,@GetBaseMaxHealth);
+         // Set a reasonable upper bound to handle event characters.
+         monster_level = Bound(Send(what,@GetBaseMaxHealth),MIN_HP,1000);
       }
       else
       {
@@ -8997,7 +9032,7 @@ messages:
    "FALSE otherwise.  The iLevel parameter has the player's base max HP "
    "taken from it, then divided by 5 before being bound between 1 and 10."
    {
-      local bGainHP, iMaxHealth, oShrunken, iApparentStamina;
+      local bGainHP, iMaxHealth, oShrunken, iStamina;
 
       bGainHP = FALSE;
 
@@ -9041,18 +9076,11 @@ messages:
 
          // If they are at max HP, award some training points instead.
          // Awards the TP when the player hits max HP also (reward!).
-         if (piStaminaMod >= 0)
-         {
-            iApparentStamina = Send(self,@GetStamina);
-         }
-         else
-         {
-            iApparentStamina = Send(self,@GetRawStamina);
-         }
+         iStamina = Send(self,@GetStamina);
 
          iMaxHealth = Send(self,@GetBaseMaxHealth);
 
-         if (iMaxHealth >= 100 + iApparentStamina
+         if (iMaxHealth >= 100 + iStamina
             OR iMaxHealth >= MAX_HP)
          {
             Send(self,@AddTrainingPoints,#points=iMaxHealth * 3,#bCap=FALSE);
@@ -9126,6 +9154,17 @@ messages:
    {
       // Use piBase_Max_health directly.
       piXP_total = Send(SYS,@GetXPForLevel,#iHP=piBase_Max_health);
+
+      return;
+   }
+
+   CheckValidHP()
+   {
+      if (piMax_health > 100 + Send(self,@GetStamina))
+      {
+         Debug(Send(self,@GetTrueName)," has ",piMax_health," HP with ",
+               Send(self,@GetStamina)," stamina.");
+      }
 
       return;
    }
@@ -9339,7 +9378,6 @@ messages:
       % Reign of Blood Frenzy death?  Newbie death?
       % Don't drop anything or take any penalties.
       if Send(SYS,@GetChaosNight)
-         OR (iRoom >= RID_NEWB_BASE AND iRoom <= RID_NEWB_MAX)
          OR Send(self,@HasHonorString,#string=player_newbie_honor_string)
          OR (NOT (piFlags & PFLAG_PKILL_ENABLE)
             AND NOT Send(SETTINGS_OBJECT,@NewbiesDropLoot))
@@ -9467,7 +9505,7 @@ messages:
          }
 
          % Positive karma makes us eligible for a booby prize.
-         if piKarma > 5000 AND (Send(self,@GetHomeRoom) <> RID_NEWB1)
+         if piKarma > 5000
          {
             % To prevent mule money abuse, make the hammer "created".
             % This makes it worthless to try to sell. It lasts for 5 hours.
@@ -9691,8 +9729,8 @@ messages:
       foreach i in plSkills
       {
          if Send(self,@DecodeSkillAbility,#compound=i) > 5
-            AND random(1,100) > Send(self,@GetStamina)
-            AND random(1,100) < piDeathCost
+            AND Random(1,100) > Send(self,@GetStamina)
+            AND Random(1,100) < piDeathCost
          {
             Send(self,@ChangeSkillAbility,#skill_num=Send(self,@DecodeSpellNum,
                   #compound=i),#amount=iAmount);
@@ -9807,21 +9845,20 @@ messages:
       {
          return player_dead_male_name_rsc;
       }
-      
-      return player_dead_female_name_rsc;
 
+      return player_dead_female_name_rsc;
    }
-   
+
    GetDeadIcon()
    {
       if piGender = GENDER_MALE
       {
          return player_dead_male_icona_rsc;
       }
- 
+
       return player_dead_female_icona_rsc;
    }
-   
+
    FreeHands()
    "Attempts to remove all items from hands if possible."
    {
@@ -9875,7 +9912,7 @@ messages:
       Send(self,@MsgSendUser,#message_rsc=player_stop_dance);
       Send(self,@SetPlayerFlag,#flag=PFLAG2_DANCING,#value=FALSE,#flagset=2);
       Send(poOwner,@SomethingChanged,#what=self);
-      
+
       return;
    }
 
@@ -11320,7 +11357,7 @@ messages:
 
    AddMight(points = 0, bAbsolute = TRUE)
    "Returns signed change to might (negative means decrease)"
-   "If restore = TRUE, ignore the bounds check and add the amount anyway."
+   "If bAbsolute = TRUE, ignore the bounds check and add the amount anyway."
    {
       local iOrigMight;
 
@@ -11329,7 +11366,7 @@ messages:
 
       if NOT bAbsolute
       {
-         piMightMod = bound(piMightMod,-piMight,(MAXIMUM_STAT-piMight));
+         piMightMod = Bound(piMightMod,-piMight,(MAXIMUM_STAT-piMight));
       }
 
       Send(self,@DrawMight);
@@ -11340,7 +11377,7 @@ messages:
 
    AddIntellect(points = 0, bAbsolute = TRUE)
    "Returns signed change to intellect (negative means decrease)"
-   "If restore = TRUE, ignore the bounds check and add the amount anyway."
+   "If bAbsolute = TRUE, ignore the bounds check and add the amount anyway."
    {
       local iOrigIntellect;
 
@@ -11349,7 +11386,7 @@ messages:
 
       if NOT bAbsolute
       {
-         piIntellectMod = bound(piIntellectMod,-piIntellect,(MAXIMUM_STAT-piIntellect));
+         piIntellectMod = Bound(piIntellectMod,-piIntellect,(MAXIMUM_STAT-piIntellect));
       }
 
       Send(self,@DrawIntellect);
@@ -11359,7 +11396,7 @@ messages:
 
    AddAim(points = 0, bAbsolute = TRUE)
    "Returns signed change to aim (negative means decrease)"
-   "If restore = TRUE, ignore the bounds check and add the amount anyway."
+   "If bAbsolute = TRUE, ignore the bounds check and add the amount anyway."
    {
       local iOrigAim;
 
@@ -11368,7 +11405,7 @@ messages:
 
       if NOT bAbsolute
       {
-         piAimMod = bound(piAimMod,-piAim,(MAXIMUM_STAT-piAim));
+         piAimMod = Bound(piAimMod,-piAim,(MAXIMUM_STAT-piAim));
       }
 
       Send(self,@DrawAim);
@@ -11379,16 +11416,27 @@ messages:
 
    AddStamina(points = 0, bAbsolute = TRUE)
    "Returns signed change to stamina (negative means decrease)"
-   "If restore = TRUE, ignore the bounds check and add the amount anyway."
+   "If bAbsolute = TRUE, ignore the bounds check and add the amount anyway."
    {
-      local iOrigStamina;
+      local iOrigStamina, iMaxHP, iNewMaxHP;
+
+      iMaxHP = Send(self,@GetBaseMaxHealth);
 
       iOrigStamina = piStaminaMod;
       piStaminaMod = piStaminaMod + points;
 
       if NOT bAbsolute
       {
-         piStaminaMod = bound(piStaminaMod,-piStamina,(MAXIMUM_STAT-piStamina));
+         piStaminaMod = Bound(piStaminaMod,-piStamina,(MAXIMUM_STAT-piStamina));
+      }
+
+      iNewMaxHP = Send(self,@GetBaseMaxHealth);
+
+      // Set their max health to the correct level.
+      if (iMaxHP <> iNewMaxHP)
+      {
+         Send(self,@GainMaxHealth,#amount=iNewMaxHP - iMaxHP);
+         Send(self,@NewHealth);
       }
 
       Send(self,@DrawStamina);
@@ -11398,7 +11446,7 @@ messages:
 
    AddAgility(points = 0, bAbsolute = TRUE)
    "Returns signed change to agility (negative means decrease)"
-   "If restore = TRUE, ignore the bounds check and add the amount anyway."
+   "If bAbsolute = TRUE, ignore the bounds check and add the amount anyway."
    {
       local iOrigAgility;
 
@@ -11604,6 +11652,11 @@ messages:
 
             return;
          }
+      }
+
+      if (poOwner <> $)
+      {
+         Send(poOwner,@SomethingChanged,#what=self);
       }
 
       return;
@@ -12602,7 +12655,10 @@ messages:
 
       if ptTempSafe <> $
       {
-         DeleteTimer(ptTempSafe);
+         if (IsTimer(ptTempSafe))
+         {
+            DeleteTimer(ptTempSafe);
+         }
       }
       ptTempSafe = CreateTimer(self,@EndTempSafe,iTime);
       piFlags = piFlags | PFLAG_TEMPSAFE;
@@ -12621,6 +12677,40 @@ messages:
       }
 
       ptTempSafe = $;
+
+      return;
+   }
+
+   PauseTempSafe()
+   {
+      local iTemp;
+
+      if (NOT IsTimer(ptTempSafe))
+      {
+         return;
+      }
+
+      iTemp = GetTimeRemaining(ptTempSafe);
+      DeleteTimer(ptTempSafe);
+      ptTempSafe = iTemp;
+
+      return;
+   }
+
+   UnpauseTempSafe()
+   {
+      if (ptTempSafe = $)
+      {
+         return;
+      }
+
+      if (NOT IsTimer(ptTempSafe))
+      {
+         ptTempSafe = CreateTimer(self,@EndTempSafe,ptTempSafe);
+      }
+
+      piFlags = piFlags | PFLAG_TEMPSAFE;
+      Send(self,@MsgSendUser,#message_rsc=player_temp_safe);
 
       return;
    }
@@ -13265,7 +13355,7 @@ messages:
       % the people who attempt to exploit this system for gain.
       if Random(1,100) > 50
       {
-         piKill_count_decay = piKill_count_decay - 1;
+         --piKill_count_decay;
          piKill_count_decay = Bound(piKill_count_decay,0,$);
       }
 
@@ -14149,8 +14239,9 @@ messages:
       piLastDeathTime = time;
       piGuildRejoinTimestamp = time;
       piLast_restart_time = time;
-      piTimeLastStomachUpdate = time;
-      piTimeAttackedPlayer = time;
+      piTimeLastStomachUpdate = 0;
+      piTimeAttackedPlayer = 0;
+      piTimeAttackedByPlayer = 0;
 
       return;
    }
@@ -14758,8 +14849,7 @@ messages:
       
       oPhase = Send(SYS,@FindSpellByNum,#num=SID_PHASE);
       Send(self,@RemoveEnchantment,#what=oPhase);
-      Send(oPhase,@NotifyRoomPenalty,#who=self);
-      Send(oPhase,@InflictFlatPenalties,#who=self);
+      Send(oPhase,@InflictPenalties,#who=self);
 
       Post(self,@AdminGoToLastSafeRoom);
 
@@ -14783,11 +14873,10 @@ messages:
       if (piFlags & PFLAG_MURDERER)
          OR (piFlags & PFLAG_OUTLAW)
       {
-         return Send(SETTINGS_OBJECT,
-               @GetOutlawMurdererLogoffPenaltyGhostTime);
+         return Send(SETTINGS_OBJECT,@GetOutlawMurdererLogPenGhostTime);
       }
 
-      return Send(SETTINGS_OBJECT,@GetLogoffPenaltyGhostTime);
+      return Send(SETTINGS_OBJECT,@GetLogPenGhostTime);
    }
 
    RefreshPhaseTimeToBase()
@@ -14841,23 +14930,28 @@ messages:
       return;
    }
 
-   GetLastPvpWarned()
+   GetLastAttackedByPlayerTime()
    {
       return piTimeAttackedByPlayer;
    }
-   
+
    DoPvpNotify()
    {
-      % Don't gong if we are already in pvp
-      if piTimeAttackedPlayer < GetTime() - PVP_NOTIFY_DECAY
+      local iTime, iNotify;
+
+      iTime = GetTime();
+      iNotify = iTime - PVP_NOTIFY_DECAY;
+
+      // Don't gong if we are already in pvp
+      if (piTimeAttackedPlayer < iNotify
+         AND piTimeAttackedByPlayer < iNotify
+         AND poOwner <> $)
       {
-         if poOwner <> $
-         {
-            Send(poOwner,@SomethingWaveRoom,#what=self,
-                  #wave_rsc=pvp_notify_wav);
-            piTimeAttackedByPlayer = GetTime();
-         }
+         Send(poOwner,@SomethingWaveRoom,#what=self,#wave_rsc=pvp_notify_wav);
       }
+
+      // Set our attacked-by time here.
+      piTimeAttackedByPlayer = iTime;
 
       return;
    }

@@ -42,13 +42,14 @@
 #include "wininet.h"
 
 #include <d3d9.h>
+#include <d3dx9.h>
 #include <DxErr.h>
 
 typedef unsigned char Bool;
 enum {False = 0, True = 1};
 
 #define MAJOR_REV 50   /* Major version of client program */
-#define MINOR_REV 39   /* Minor version of client program; must be in [0, 99] */
+#define MINOR_REV 45   /* Minor version of client program; must be in [0, 99] */
 
 #define MAXAMOUNT 9     /* Max # of digits in a server integer */
 #define MAXSTRINGLEN 512 /* Max length of a string loaded from string table */
@@ -69,6 +70,7 @@ enum {False = 0, True = 1};
 #define P_CATCH 3
 
 extern void GetGamePath( char *szGamePath );
+double GetMicroCountDouble();
 
 extern long CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 extern void ClearMessageQueue(void);

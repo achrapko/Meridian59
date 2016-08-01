@@ -38,6 +38,7 @@ static char INIPlaySound[]   = "PlaySound";
 static char INIPlayLoopSounds[]   = "PlayLoopSounds";
 static char INIPlayRandomSounds[]   = "PlayRandomSounds";
 static char INITimeout[]     = "Timeout";
+static char INITimeoutEnabled[] = "TimeoutEnabled";
 static char INIUserName[]    = "UserName";
 static char INIAnimate[]     = "Animate";
 static char INIArea[]        = "Area";
@@ -56,6 +57,8 @@ static char INIObjectCacheMin[] = "ObjectCacheMin";
 static char INIGridCacheMin[] = "GridCacheMin";
 static char INIMusicVolume[]  = "MusicVolume";
 static char INISoundVolume[]  = "SoundVolume";
+static char INIMipMaps[]      = "MipMaps";
+static char INIAntiAliasing[] = "AntiAliasing";
 
 static char interface_section[]= "Interface";
 static char INIDrawMap[]     = "DrawMap";
@@ -266,11 +269,11 @@ void ConfigLoad(void)
    config.CacheBalance   = GetConfigInt(misc_section, INICacheBalance,        70, ini_file);
    config.ObjectCacheMin = GetConfigInt(misc_section, INIObjectCacheMin, 6000000, ini_file);
    config.GridCacheMin = GetConfigInt(misc_section, INIGridCacheMin,   4000000, ini_file);
+   config.mipMaps = GetConfigInt(misc_section, INIMipMaps, true, ini_file);
+   config.aaMode = GetConfigInt(misc_section, INIAntiAliasing, 8, ini_file);
 
    if( config.CacheBalance < 10 ) config.CacheBalance = 10 ;
    if( config.CacheBalance > 90 ) config.CacheBalance = 90 ;
-
-   config.soundLibrary = GetConfigInt(misc_section, INISoundLibrary, LIBRARY_MSS, ini_file);
 
 #ifdef NODPRINTFS
    config.debug    = False;
@@ -283,7 +286,7 @@ void ConfigLoad(void)
    config.clearCache = FALSE;
 #else
    config.debug				= GetConfigInt(special_section, INIDebug, True, ini_file);
-   config.security			= GetConfigInt(special_section, INISecurity, True, ini_file);
+   config.security			= GetConfigInt(special_section, INISecurity, False, ini_file);
    config.showMapBlocking	= GetConfigInt(special_section, INIShowMapBlocking, 0, ini_file);
    config.showUnseenWalls	= GetConfigInt(special_section, INIShowUnseenWalls, 0, ini_file);
    config.showUnseenMonsters = GetConfigInt(special_section, INIShowUnseenMonsters, 0, ini_file);
@@ -294,6 +297,7 @@ void ConfigLoad(void)
 #endif
    config.showFPS = GetConfigInt(special_section, INIShowFPS, False, ini_file);
    config.timeout	= GetConfigInt(misc_section, INITimeout, DefaultTimeout, ini_file);
+   config.timeoutenabled = GetConfigInt(misc_section, INITimeoutEnabled, False, ini_file);
    config.technical = GetConfigInt(special_section, INITechnical, False, ini_file);
 
    TimeSettingsLoad();
@@ -312,6 +316,7 @@ void ConfigSave(void)
    WriteConfigInt(misc_section, INIPlayLoopSounds, config.play_loop_sounds, ini_file);
    WriteConfigInt(misc_section, INIPlayRandomSounds, config.play_random_sounds, ini_file);
    WriteConfigInt(misc_section, INITimeout, config.timeout, ini_file);
+   WriteConfigInt(misc_section, INITimeoutEnabled, config.timeoutenabled, ini_file);
    WriteConfigInt(misc_section, INIArea, gLargeArea, ini_file);
    WriteConfigInt(misc_section, INIAnimate, config.animate, ini_file);
    WriteConfigInt(misc_section, INIVersion, config.ini_version, ini_file);
@@ -321,6 +326,8 @@ void ConfigSave(void)
    WriteConfigInt(misc_section, INICacheBalance, config.CacheBalance, ini_file);
    WriteConfigInt(misc_section, INIObjectCacheMin, config.ObjectCacheMin, ini_file);
    WriteConfigInt(misc_section, INIGridCacheMin, config.GridCacheMin, ini_file);
+   WriteConfigInt(misc_section, INIMipMaps, config.mipMaps, ini_file);
+   WriteConfigInt(misc_section, INIAntiAliasing, config.aaMode, ini_file);
 
    WriteConfigInt(users_section, INIDrawPlayerNames, config.draw_player_names, ini_file);
    WriteConfigInt(users_section, INIDrawNPCNames, config.draw_npc_names, ini_file);

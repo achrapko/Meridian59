@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2013
-VisualStudioVersion = 12.0.40629.0
+# Visual Studio 14
+VisualStudioVersion = 14.0.25123.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "blakserv", "blakserv\blakserv.vcxproj", "{FA63A56D-3C89-447C-9409-676477E93AE9}"
 EndProject
@@ -125,6 +125,8 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zlib", "libzlib\zlib.vcxproj", "{E2C146F9-F840-4C21-9CA9-E1DD9649AB7A}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "clientpatch", "util\clientpatch.vcxproj", "{ED341D80-EB9F-4483-842D-B67F77911614}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "jansson", "libjansson\jansson.vcxproj", "{F61A1CC1-DC47-4407-BFE0-A2221E5EECCA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -260,6 +262,10 @@ Global
 		{ED341D80-EB9F-4483-842D-B67F77911614}.Debug|Win32.Build.0 = Debug|Win32
 		{ED341D80-EB9F-4483-842D-B67F77911614}.Release|Win32.ActiveCfg = Release|Win32
 		{ED341D80-EB9F-4483-842D-B67F77911614}.Release|Win32.Build.0 = Release|Win32
+		{F61A1CC1-DC47-4407-BFE0-A2221E5EECCA}.Debug|Win32.ActiveCfg = Debug|Win32
+		{F61A1CC1-DC47-4407-BFE0-A2221E5EECCA}.Debug|Win32.Build.0 = Debug|Win32
+		{F61A1CC1-DC47-4407-BFE0-A2221E5EECCA}.Release|Win32.ActiveCfg = Release|Win32
+		{F61A1CC1-DC47-4407-BFE0-A2221E5EECCA}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

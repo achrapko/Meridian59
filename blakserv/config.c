@@ -90,9 +90,13 @@ config_table_type config_table[] =
 { GUEST_TOO_MANY,         F, "TooMany",       CONFIG_STR,   
      "Too many guests are logged on right now; please try again later." },
 
+{ ACCOUNT_GROUP,          T, "[Account]",     CONFIG_GROUP, "" },
+{ ACCOUNT_NUM_SLOTS,      T, "NumSlots",      CONFIG_INT,   "3" },
+
 { LOGIN_GROUP,            F, "[Login]",       CONFIG_GROUP, "" },
 { LOGIN_MAX_ATTEMPTS,     F, "MaxAttempts",   CONFIG_INT,   "3" },
-{ LOGIN_MIN_VERSION,      T, "MinVersion",    CONFIG_INT,   "0" },
+{ LOGIN_CLASSIC_MIN_VERSION, T, "MinClassicVersion", CONFIG_INT,   "0" },
+{ LOGIN_OGRE_MIN_VERSION,    T, "MinOgreVersion",    CONFIG_INT,   "0" },
 { LOGIN_OLD_VERSION_STR,  F, "OldVersionStr", CONFIG_STR,   
      "The game software has been upgraded while you have been online. Logoff and "
      "then login again to automatically upgrade your software." },
@@ -135,7 +139,7 @@ config_table_type config_table[] =
      "The game is temporarily closed for maintenance." },
 
 { RESOURCE_GROUP,         F, "[Resource]",    CONFIG_GROUP, "" },
-{ RESOURCE_RSC_SPEC,      F, "RscSpec",       CONFIG_STR,   "*.rsc" },
+{ RESOURCE_RSC_SPEC,      F, "RscSpec",       CONFIG_STR,   "*.rsb" },
 { RESOURCE_LANGUAGE,      T, "Language",      CONFIG_INT,   "0" },
 
 { MEMORY_GROUP,           F, "[Memory]",      CONFIG_GROUP, "" },
@@ -164,10 +168,18 @@ config_table_type config_table[] =
 { UPDATE_DOWNLOAD_REASON, T, "DownloadReason",CONFIG_STR,
      "An update of Meridian files is available and required." },
 { UPDATE_DEMO_BUTTON,	  T, "DemoButton"    ,CONFIG_STR,   "" },
-{ UPDATE_PATCH_ROOT,      T, "PatchHost"     ,CONFIG_STR,   "" },
-{ UPDATE_PATCH_PATH,      T, "PatchPath"     ,CONFIG_STR,   "" },
-{ UPDATE_PATCH_CACHE_PATH,T, "PatchCachePath",CONFIG_STR,   "" },
-{ UPDATE_PATCH_TXT,       F, "PatchTxt"      ,CONFIG_STR,   "" },
+
+{ UPDATE_CLASSIC_PATCH_ROOT, T, "ClassicPatchHost" ,CONFIG_STR, "" },
+{ UPDATE_CLASSIC_PATCH_PATH, T, "ClassicPatchPath" ,CONFIG_STR, "" },
+{ UPDATE_CLASSIC_PATCH_CACHE_PATH,T, "ClassicPatchCachePath", CONFIG_STR, "" },
+{ UPDATE_CLASSIC_PATCH_TXT, T, "ClassicPatchTxt" ,CONFIG_STR, "" },
+{ UPDATE_CLASSIC_CLUB_EXE, T,  "ClassicClubExe"  ,CONFIG_STR, "" },
+
+{ UPDATE_OGRE_PATCH_ROOT, T, "OgrePatchHost" ,CONFIG_STR, "" },
+{ UPDATE_OGRE_PATCH_PATH, T, "OgrePatchPath" ,CONFIG_STR, "" },
+{ UPDATE_OGRE_PATCH_CACHE_PATH,T, "OgrePatchCachePath", CONFIG_STR, "" },
+{ UPDATE_OGRE_PATCH_TXT, T, "OgrePatchTxt" ,CONFIG_STR, "" },
+{ UPDATE_OGRE_CLUB_EXE, T,  "OgreClubExe"  ,CONFIG_STR, "" },
 
 { CONSOLE_GROUP,          F, "[Console]",     CONFIG_GROUP, "" },
 { CONSOLE_ADMINISTRATOR,  F, "Administrator", CONFIG_STR,   "Administrator" },
@@ -177,8 +189,8 @@ config_table_type config_table[] =
 { RIGHTS_GROUP,           F, "[Rights]",      CONFIG_GROUP, "" },
 { RIGHTS_GOROOM,          T, "GoRoom",        CONFIG_INT,   "2" },
 { RIGHTS_GOROOMBYNUM,     T, "GoRoomByNum",   CONFIG_INT,   "2" },
-{ RIGHTS_GOPLAYER,        T, "GoPlayer",      CONFIG_INT,   "1" },
-{ RIGHTS_GETPLAYER,       T, "GetPlayer",     CONFIG_INT,   "1" },
+{ RIGHTS_GOPLAYER,        T, "GoPlayer",      CONFIG_INT,   "2" },
+{ RIGHTS_GETPLAYER,       T, "GetPlayer",     CONFIG_INT,   "2" },
 
 { CONSTANTS_GROUP,        F, "[Constants]",   CONFIG_GROUP, "" },
 { CONSTANTS_ENABLED,      F, "Enabled",       CONFIG_BOOL,  "No" },

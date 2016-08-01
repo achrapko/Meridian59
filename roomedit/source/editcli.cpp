@@ -289,7 +289,7 @@ END_RESPONSE_TABLE;
 // -------------
 //  Constructor
 //
-TEditorClient::TEditorClient (TWindow* parent, char *_levelName,
+TEditorClient::TEditorClient (TWindow* parent, char *_levelName, char *_saveLevelName,
 							  BOOL newLevel, const char* title,
 							  TModule* module):
 	TLayoutWindow(parent, title, module)
@@ -406,10 +406,13 @@ TEditorClient::TEditorClient (TWindow* parent, char *_levelName,
 	SetScale ((float) (1.0 / InitialScale));
 	CenterMapAroundCoords( (MapMinX + MapMaxX) / 2, (MapMinY + MapMaxY) / 2);
 
-	// If we're just opening the file to save it with new features uncomment
-	// this code to perform immediate save and exit after loading.
-	//SaveLevelData(LevelName);
-	//exit(0);
+   // If operating in nodebuilder mode, save the map straight away and exit.
+   if (NodeBuilderMode() && _saveLevelName[0] != 0)
+   {
+      SaveLevelData(_saveLevelName);
+      CleanupWindeu();
+      exit(0);
+   }
 }
 
 
@@ -3320,7 +3323,7 @@ void TEditorClient::CmModeNext ()
 		case OBJ_LINEDEFS:
 			NewMode = OBJ_SECTORS;
 			break;
-		case OBJ_SECTORS:
+		default: // case OBJ_SECTORS:
 			NewMode = OBJ_THINGS;
 			break;
 	}
@@ -3352,7 +3355,7 @@ void TEditorClient::CmModePrev ()
 		case OBJ_LINEDEFS:
 			NewMode = OBJ_VERTEXES;
 			break;
-		case OBJ_SECTORS:
+		default: //case OBJ_SECTORS:
 			NewMode = OBJ_LINEDEFS;
 			break;
 	}
@@ -3449,7 +3452,7 @@ void TEditorClient::CmMiscRotateScale ()
 		 if (EditMode == OBJ_THINGS)	hc = Rotate_and_scale_Things;
 	else if (EditMode == OBJ_VERTEXES)	hc = Rotate_and_scale_Vertices;
 	else if (EditMode == OBJ_LINEDEFS)	hc = Rotate_and_scale_LineDefs;
-	else if (EditMode == OBJ_SECTORS)	hc = Rotate_and_scale_Sectors;
+	else hc = Rotate_and_scale_Sectors; //  if (EditMode == OBJ_SECTORS)
 	SET_HELP_CONTEXT(hc);
 
 	char Title[80];

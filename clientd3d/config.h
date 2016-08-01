@@ -52,6 +52,7 @@ typedef struct {
    Bool play_sound;              /* Does user want to hear sound? */
    Bool large_area;              /* Drawing area size--> 0 = small, nonzero = large */
    int  timeout;                 /* Period of logoff timer */
+   Bool  timeoutenabled;         /* Whether we use the logoff timer */
    char username[MAXUSERNAME+1]; /* User's last login name */
    char password[MAXPASSWORD+1]; /* User's last password (not saved to INI file) */
 
@@ -111,11 +112,12 @@ typedef struct {
    Bool colorcodes;
    int lastPasswordChange;
 
-   int soundLibrary;
-   Bool rosterbmps;         // unused, should be removed
    int CacheBalance;			 /* controls the balance between the object and grid caches */
    int ObjectCacheMin;			 /* minimum size of the object cache */
    int GridCacheMin;			 /* minimum size of the grid cache */
+
+   Bool mipMaps; // Load multiple levels of textures.
+   int aaMode; // Level of antialiasing.
 
    // stuff for new client
    BOOL	bAlwaysRun;
@@ -154,10 +156,6 @@ M59EXPORT BOOL WriteConfigInt(char *section, char *key, int value, char *fname);
 
 void ConfigSetServerNameByNumber(int num);
 void ConfigSetSocketPortByNumber(int num);
-
-#define LIBRARY_NIL 0
-#define LIBRARY_MSS 1
-#define LIBRARY_MIX 2
 
 #ifdef __cplusplus
 }

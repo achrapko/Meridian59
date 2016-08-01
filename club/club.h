@@ -37,8 +37,11 @@
 #define CM_FILESIZE   (WM_USER + 1005)
 #define CM_PROGRESS   (WM_USER + 1006)
 #define CM_FILENAME   (WM_USER + 1007)
+#define CM_SCANNING   (WM_USER + 1008)
 
 #define CLUB_NUM_ARGUMENTS 6
+#define CLUB_NEW_NUM_ARGUMENTS 7
+#define MAX_CMDLINE	2048	 // Maximum program command line size
 
 #include "resource.h"
 
@@ -66,7 +69,11 @@ extern std::string transfer_local_filename;
 #else
 extern std::string transfer_path;
 extern std::string patchinfo_path;
+extern std::string patchinfo_filename;
+
+extern Bool get_patchinfo;
 #endif
+
 extern Bool success;
 
 #endif

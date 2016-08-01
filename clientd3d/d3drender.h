@@ -103,6 +103,9 @@ typedef struct font_3d
 extern LPDIRECT3D9				gpD3D;
 extern LPDIRECT3DDEVICE9		gpD3DDevice;
 
+// Matrices we can precalculate, needed in other files.
+extern D3DMATRIX mPlayerHeadingTrans; // Player's heading rotated Y and transposed.
+
 extern int		gNumVertices;
 extern BOOL		gbAlwaysRun;
 extern int		gD3DEnabled;
@@ -110,6 +113,7 @@ extern int		gScreenWidth;
 extern int		gScreenHeight;
 
 HRESULT				D3DRenderInit(HWND hWnd);
+void				D3DRenderReset(void);
 void				D3DRenderShutDown(void);
 void				D3DRenderBegin(room_type *room, Draw3DParams *params);
 void				D3DGeometryBuild(room_type *room);
@@ -118,8 +122,6 @@ void				D3DRenderResizeDisplay(int left, int top, int right, int bottom);
 void				D3DRenderEnableToggle(void);
 int					D3DRenderIsEnabled(void);
 LPDIRECT3DTEXTURE9	D3DRenderTextureCreateFromBGF(PDIB pDib, BYTE xLat0, BYTE xLat1,
-												  BYTE effect);
-LPDIRECT3DTEXTURE9	D3DRenderTextureCreateFromBGFSwizzled(PDIB pDib, BYTE xLat0, BYTE xLat1,
 												  BYTE effect);
 void				D3DRenderPaletteSet(UINT xlatID0, UINT xlatID1, BYTE flags);
 void				D3DRenderBackgroundSet(ID background);

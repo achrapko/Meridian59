@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
       <Configuration>Debug</Configuration>
@@ -18,13 +18,13 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v120_xp</PlatformToolset>
+    <PlatformToolset>v140_xp</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v120_xp</PlatformToolset>
+    <PlatformToolset>v140_xp</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
@@ -74,7 +74,7 @@
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>ws2_32.lib;comctl32.lib;winmm.lib;wininet.lib;d3d9.lib;DxErr.lib;libpng.lib;libarchive.lib;zlib.lib;irrklang.lib;jansson.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;comctl32.lib;winmm.lib;wininet.lib;d3d9.lib;D3dx9.lib;DxErr.lib;libpng.lib;libarchive.lib;zlib.lib;irrklang.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)\lib;</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>client.def</ModuleDefinitionFile>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
@@ -89,7 +89,6 @@
     <PostBuildEvent>
       <Command>copy /y "$(OutDir)$(TargetName).exe" "$(SolutionDir)run\localclient"
 copy /y "$(OutDir)$(TargetName).lib" "$(SolutionDir)lib"
-copy /y "$(SolutionDir)bin\jansson.dll" "$(SolutionDir)run\localclient"
 cd..
 $(SolutionDir)postbuild.bat
 </Command>
@@ -131,7 +130,7 @@ $(SolutionDir)postbuild.bat
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>ws2_32.lib;comctl32.lib;winmm.lib;wininet.lib;d3d9.lib;DxErr.lib;libpng.lib;libarchive.lib;zlib.lib;irrklang.lib;jansson.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;comctl32.lib;winmm.lib;wininet.lib;d3d9.lib;D3dx9.lib;DxErr.lib;libpng.lib;libarchive.lib;zlib.lib;irrklang.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)\lib;</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>client.def</ModuleDefinitionFile>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
@@ -147,7 +146,6 @@ $(SolutionDir)postbuild.bat
     <PostBuildEvent>
       <Command>copy /y "$(OutDir)$(TargetName).exe" "$(SolutionDir)run\localclient"
 copy /y "$(OutDir)$(TargetName).lib" "$(SolutionDir)lib"
-copy /y "$(SolutionDir)bin\jansson.dll" "$(SolutionDir)run\localclient"
 cd..
 $(SolutionDir)postbuild.bat
 </Command>
@@ -358,6 +356,12 @@ $(SolutionDir)postbuild.bat
     <ClCompile Include="xlat.c" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="bitmap\crosscur.cur" />
+    <None Include="bitmap\download.avi" />
+    <None Include="bitmap\drop.cur" />
+    <None Include="bitmap\get.cur" />
+    <None Include="bitmap\incur.cur" />
+    <None Include="bitmap\TARGET.CUR" />
     <None Include="client.def" />
   </ItemGroup>
   <ItemGroup>
@@ -381,6 +385,26 @@ $(SolutionDir)postbuild.bat
     <ProjectReference Include="maketrig.vcxproj">
       <Project>{cd5804a4-972e-4e67-a461-427a9725786f}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="bitmap\annotate.bmp" />
+    <Image Include="bitmap\bkgnd.bmp" />
+    <Image Include="bitmap\blue.ico" />
+    <Image Include="bitmap\CLOCK.ICO" />
+    <Image Include="bitmap\FORM.ICO" />
+    <Image Include="bitmap\ICON1.ICO" />
+    <Image Include="bitmap\imglist.bmp" />
+    <Image Include="bitmap\mapbkgnd.bmp" />
+    <Image Include="bitmap\offer.ico" />
+    <Image Include="bitmap\phone.ico" />
+    <Image Include="bitmap\viewtreat_ll.bmp" />
+    <Image Include="bitmap\viewtreat_ll_hilight.bmp" />
+    <Image Include="bitmap\viewtreat_lr.bmp" />
+    <Image Include="bitmap\viewtreat_lr_hilight.bmp" />
+    <Image Include="bitmap\viewtreat_ul.bmp" />
+    <Image Include="bitmap\viewtreat_ul_hilight.bmp" />
+    <Image Include="bitmap\viewtreat_ur.bmp" />
+    <Image Include="bitmap\viewtreat_ur_hilight.bmp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

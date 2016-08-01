@@ -22,6 +22,16 @@ d3d_render_packet_new   *gpPacket;
 LPDIRECT3D9            gpD3D = NULL;
 LPDIRECT3DDEVICE9      gpD3DDevice = NULL;
 
+// Matrices we can precalculate
+D3DMATRIX mPlayerHeading; // Player's heading rotated Y.
+D3DMATRIX mPlayerPitch; // Player's pitch rotated X.
+D3DMATRIX mPlayerPitchFudge; // Player's pitch rotated X, slightly larger for objects?
+D3DMATRIX mPlayerHeadingTrans; // Player's heading rotated Y and transposed.
+D3DMATRIX mPlayerViewTranslate; // Player's view translated.
+D3DMATRIX mPlayerHPMul; // Player's heading and pitch rotated and multiplied.
+D3DMATRIX mPlayerHPFudgeMul; // Player's heading and larger pitch rotated and multiplied.
+D3DMATRIX mIdentity; // Identity matrix.
+
 // temp dynamic lightmaps
 LPDIRECT3DTEXTURE9      gpDLightAmbient = NULL;
 LPDIRECT3DTEXTURE9      gpDLightWhite = NULL;
@@ -113,6 +123,7 @@ AREA               gD3DView;
 Bool               gD3DRedrawAll = FALSE;
 int                  gTemp = 0;
 Bool               gWireframe;      // this is really bad, I'm sorry
+int                numMipMaps = 5;
 
 extern player_info      player;
 extern long            viewer_height;
@@ -246,10 +257,6 @@ unsigned char gSkyboxBGRA[] =
 };
 
 void            D3DRenderBackgroundsLoad(char *pFilename, int index);
-LPDIRECT3DTEXTURE9   D3DRenderTextureCreateFromBGF(PDIB pDib, BYTE xLat0, BYTE xLat1,
-                                      BYTE effect);
-LPDIRECT3DTEXTURE9   D3DRenderTextureCreateFromBGFSwizzled(PDIB pDib, BYTE xLat0, BYTE xLat1,
-                                      BYTE effect);
 LPDIRECT3DTEXTURE9   D3DRenderTextureCreateFromResource(BYTE *ptr, int width, int height);
 void            D3DRenderWorldDraw(d3d_render_pool_new *pPool, room_type *room,
                                 Draw3DParams *params);
@@ -259,7 +266,7 @@ void            D3DRenderNamesDraw3D(d3d_render_cache_system *pCacheSystem, d3d_
                   room_type *room, Draw3DParams *params, font_3d *pFont);
 void            D3DRenderLMapsBuild(void);
 void            D3DRenderFontInit(font_3d *pFont, HFONT hFont);
-void            D3DRenderSkyboxDraw(d3d_render_pool_new *pPool, int angleHeading, int anglePitch);
+void            D3DRenderSkyboxDraw(d3d_render_pool_new *pPool);
 void            D3DRenderBackgroundObjectsDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DParams *params);
 void            D3DGetBackgroundOverlayPosition(BackgroundOverlay *pOverlay, Draw3DParams *params, Pnt3D *bObj);
 Bool            D3DComputePlayerOverlayArea(PDIB pdib, char hotspot, AREA *obj_area);
@@ -391,8 +398,17 @@ HRESULT D3DRenderInit(HWND hWnd)
    /***************************************************************************/
    
    // Keep AA disabled for now, until fixed
-   hr = IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_MULTISAMPLEANTIALIAS, FALSE);
+   if (config.aaMode > 0)
+      hr = IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_MULTISAMPLEANTIALIAS, TRUE);
+   else
+      hr = IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_MULTISAMPLEANTIALIAS, FALSE);
    
+   // Number of mipmaps/texture levels. Config is a boolean, pick 5 (on) or 1 (off).
+   if (config.mipMaps)
+      numMipMaps = 5;
+   else
+      numMipMaps = 1;
+
    hr = IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_CULLMODE, D3DCULL_NONE);
    hr = IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_LIGHTING, FALSE);
    hr = IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_CLIPPING, FALSE);
@@ -443,12 +459,20 @@ HRESULT D3DRenderInit(HWND hWnd)
 
    IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MAGFILTER, gD3DDriverProfile.magFilter);
    IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MINFILTER, gD3DDriverProfile.minFilter);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
    IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MAXANISOTROPY, gD3DDriverProfile.maxAnisotropy);
+   if (config.mipMaps)
+   {
+      IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR);
+      IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR);
+   }
+   else
+   {
+      IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+      IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+   }
 
    IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MAGFILTER, gD3DDriverProfile.magFilter);
    IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MINFILTER, gD3DDriverProfile.minFilter);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MIPFILTER, D3DTEXF_NONE);      
    IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MAXANISOTROPY, gD3DDriverProfile.maxAnisotropy);
       
    /***************************************************************************/
@@ -514,6 +538,9 @@ HRESULT D3DRenderInit(HWND hWnd)
    playerOldPos.y = 0;
    playerOldPos.z = 0;
 
+   // Particle system static info.
+   D3DParticleSystemInit();
+
    return S_OK;
 }
 
@@ -537,7 +564,9 @@ void D3DRenderShutDown(void)
          D3DRenderPoolShutdown(&gLMapPool);
          D3DRenderPoolShutdown(&gLMapPoolStatic);
       }
-      
+
+      D3DParticleSystemShutdown();
+
       D3DCacheSystemShutdown(&gObjectCacheSystem);
       D3DCacheSystemShutdown(&gWorldCacheSystem);
       D3DCacheSystemShutdown(&gWorldCacheSystemStatic);
@@ -646,7 +675,7 @@ void D3DRenderShutDown(void)
 ************************************************************************************/
 void D3DRenderBegin(room_type *room, Draw3DParams *params)
 {
-   D3DMATRIX   mat, rot, trans, view, proj, identity;
+   D3DMATRIX   view, proj;
    int         angleHeading, anglePitch;
    long      timeOverall, timeWorld, timeObjects, timeLMaps, timeSkybox;
    long     timeSkybox2, timeInit, timeParticles;
@@ -657,7 +686,7 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
    Bool      draw_objects = TRUE;
    Bool      draw_particles = TRUE;
    room_contents_node   *pRNode;
-   
+
    /***************************************************************************/
    /*                             PREPARATIONS                                */
    /***************************************************************************/
@@ -690,9 +719,7 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
    // view element textures
    if (gFrame == 0)
    {
-      int   i;
-
-      for (i = 0; i < NUM_VIEW_ELEMENTS; i++)
+      for (int i = 0; i < NUM_VIEW_ELEMENTS; ++i)
       {
          gpViewElements[i] = D3DRenderTextureCreateFromResource(ViewElements[i].bits,
             ViewElements[i].width, ViewElements[i].height);
@@ -737,10 +764,14 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
 
    D3DRenderPaletteSet(0, 0, 0);
 
-    IDirect3DDevice9_BeginScene(gpD3DDevice);
+   IDirect3DDevice9_BeginScene(gpD3DDevice);
 
-   MatrixIdentity(&mat);
-   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mat);
+   /***************************************************************************/
+   /*                              MATRICES                                   */
+   /***************************************************************************/
+
+   MatrixIdentity(&mIdentity);
+   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mIdentity);
 
    angleHeading = params->viewer_angle + 3072;
    if (angleHeading >= MAX_ANGLE)
@@ -748,11 +779,15 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
 
    anglePitch = PlayerGetHeightOffset();
 
-   MatrixRotateY(&rot, (float)angleHeading * 360.0f / 4096.0f * PI / 180.0f);
-   MatrixRotateX(&mat, (float)anglePitch * 45.0f / 414.0f * PI / 180.0f);
-   MatrixMultiply(&rot, &rot, &mat);
-   MatrixTranslate(&trans, -(float)params->viewer_x, -(float)params->viewer_height, -(float)params->viewer_y);
-   MatrixMultiply(&view, &trans, &rot);
+   // Set some matrices up now so we don't have to calculate them multiple times during rendering.
+   MatrixRotateY(&mPlayerHeading, (float)angleHeading * 360.0f / 4096.0f * PI / 180.0f);
+   MatrixTranspose(&mPlayerHeadingTrans, &mPlayerHeading);
+   MatrixRotateX(&mPlayerPitchFudge, (float)anglePitch * 50.0f / 414.0f * PI / 180.0f);
+   MatrixRotateX(&mPlayerPitch, (float)anglePitch * 45.0f / 414.0f * PI / 180.0f);
+   MatrixMultiply(&mPlayerHPMul, &mPlayerHeading, &mPlayerPitch);
+   MatrixMultiply(&mPlayerHPFudgeMul, &mPlayerHeading, &mPlayerPitchFudge);
+   MatrixTranslate(&mPlayerViewTranslate, -(float)params->viewer_x, -(float)params->viewer_height, -(float)params->viewer_y);
+   MatrixMultiply(&view, &mPlayerViewTranslate, &mPlayerHPMul);
 
    IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &view);
 
@@ -760,6 +795,10 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
 //   aspectRatio = (float)(gD3DRect.right - gD3DRect.left) / (float)(gD3DRect.bottom - gD3DRect.top);
 //   XformMatrixPerspective(&proj, -PI / 4.0f * 0.64f * aspectRatio, PI / 6.0f * 1.55f * (1.0f / aspectRatio), 100.0f, 150000.0f);
    IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &proj);
+
+   /***************************************************************************/
+   /*                              PREPARATIONS                               */
+   /***************************************************************************/
 
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_COLORWRITEENABLE,
                                    D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
@@ -793,7 +832,11 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
    playerOldPos.z = params->viewer_height;
 
    timeInit = timeGetTime() - timeInit;
-   // skybox
+
+   /***************************************************************************/
+   /*                              SKYBOX                                     */
+   /***************************************************************************/
+
    if (draw_sky)
    {
       timeSkybox = timeGetTime();
@@ -815,7 +858,7 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
 
       D3DRenderPoolReset(&gWorldPool, &D3DMaterialWorldPool);
       D3DCacheSystemReset(&gWorldCacheSystem);
-      D3DRenderSkyboxDraw(&gWorldPool, angleHeading, anglePitch);
+      D3DRenderSkyboxDraw(&gWorldPool);
       D3DCacheFill(&gWorldCacheSystem, &gWorldPool, 1);
       D3DCacheFlush(&gWorldCacheSystem, &gWorldPool, 1, D3DPT_TRIANGLESTRIP);
 
@@ -940,7 +983,7 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
 
       D3DRenderPoolReset(&gWorldPool, &D3DMaterialWorldPool);
       D3DCacheSystemReset(&gWorldCacheSystem);
-      D3DRenderSkyboxDraw(&gWorldPool, angleHeading, anglePitch);
+      D3DRenderSkyboxDraw(&gWorldPool);
       D3DCacheFill(&gWorldCacheSystem, &gWorldPool, 1);
       D3DCacheFlush(&gWorldCacheSystem, &gWorldPool, 1, D3DPT_TRIANGLESTRIP);
 
@@ -964,7 +1007,11 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
       timeLMaps = timeGetTime();
       IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MAGFILTER, gD3DDriverProfile.magFilter);
       IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MINFILTER, gD3DDriverProfile.minFilter);
-
+      if (config.mipMaps)
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MIPFILTER, D3DTEXF_LINEAR);
+      else
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+      IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MAXANISOTROPY, gD3DDriverProfile.maxAnisotropy);
       IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
       IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl2dc);
 
@@ -994,10 +1041,8 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
       }
       //timeDynamic = timeGetTime() - timeDynamic;
       //debug(("Dynamic light maps = %d, static = %d\n", timeDynamic, timeStatic));
-
       D3DCacheFill(&gLMapCacheSystem, &gLMapPool, 2);
       D3DCacheFlush(&gLMapCacheSystem, &gLMapPool, 2, D3DPT_TRIANGLESTRIP);
-
       if (gD3DDriverProfile.bFogEnable)
          IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_FOGENABLE, TRUE);
 
@@ -1005,48 +1050,6 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
    }
 
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_CULLMODE, D3DCULL_NONE);
-   
-   /***************************************************************************/
-   /*                             PARTICLES                                   */
-   /***************************************************************************/
-   
-   if (draw_particles)
-   {
-      timeParticles = timeGetTime();
-
-      // Updates emitter positions for all particle systems.
-      D3DParticleSystemSetPlayerPos(playerDeltaPos.x, playerDeltaPos.y, playerDeltaPos.z);
-
-      if (effects.sand)
-      {
-         IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
-         IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl0dc);
-
-         D3DParticleSystemUpdateFluid(&gParticleSystemSand, &gParticlePool, &gParticleCacheSystem, params);
-      }
-      if (effects.raining && config.weather)
-      {
-         IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
-         IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl0dc);
-
-         D3DParticleSystemUpdateFluid(&gParticleSystemRain, &gParticlePool, &gParticleCacheSystem, params);
-      }
-      if (effects.snowing && config.weather)
-      {
-         IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
-         IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl0dc);
-
-         D3DParticleSystemUpdateFluid(&gParticleSystemSnow, &gParticlePool, &gParticleCacheSystem, params);
-      }
-      if (effects.fireworks)
-      {
-         IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
-         IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl0dc);
-
-         D3DParticleSystemUpdateBurst(&gParticleSystemFireworks, &gParticlePool, &gParticleCacheSystem, params);
-      }
-      timeParticles = timeGetTime() - timeParticles;
-   }
 
    /***************************************************************************/
    /*                   NAMES / OBJECTS / PLAYEROVERLAYS                      */
@@ -1068,8 +1071,6 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
 
          D3DRENDER_SET_ALPHATEST_STATE(gpD3DDevice, TRUE, TEMP_ALPHA_REF, D3DCMP_GREATEREQUAL);
          D3DRENDER_SET_ALPHABLEND_STATE(gpD3DDevice, TRUE, D3DBLEND_SRCALPHA, D3DBLEND_SRCCOLOR);
-
-         MatrixIdentity(&identity);
 
          D3DRenderPoolReset(&gObjectPool, &D3DMaterialObjectPool);
          D3DCacheSystemReset(&gObjectCacheSystem);
@@ -1179,10 +1180,9 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
    IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl0dc);
 
    // Set up orthographic projection for drawing overlays
-   MatrixIdentity(&mat);
-   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mat);
-   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mat);
-   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mat);
+   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mIdentity);
+   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mIdentity);
+   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mIdentity);
 
    // post overlay effects
    if (draw_objects)
@@ -1197,6 +1197,55 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
       D3DCacheFill(&gObjectCacheSystem, &gObjectPool, 1);
       D3DCacheFlush(&gObjectCacheSystem, &gObjectPool, 1, D3DPT_TRIANGLESTRIP);
       IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ZENABLE, D3DZB_TRUE);
+   }
+
+   /***************************************************************************/
+   /*                             PARTICLES                                   */
+   /***************************************************************************/
+
+   if (draw_particles)
+   {
+      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &view);
+      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &proj);
+
+      timeParticles = timeGetTime();
+
+      // Updates emitter positions for all particle systems.
+      D3DParticleSystemSetPlayerPos(playerDeltaPos.x, playerDeltaPos.y, playerDeltaPos.z);
+
+      if (effects.sand)
+      {
+         IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
+         IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl0dc);
+
+         D3DParticleSystemUpdateFluid(&gParticleSystemSand, &gParticlePool, &gParticleCacheSystem, params);
+      }
+      if (effects.raining && config.weather)
+      {
+         IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
+         IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl0dc);
+
+         D3DParticleSystemUpdateFluid(&gParticleSystemRain, &gParticlePool, &gParticleCacheSystem, params);
+      }
+      if (effects.snowing && config.weather)
+      {
+         IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
+         IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl1dc);
+
+         D3DParticleSystemUpdateFluid(&gParticleSystemSnow, &gParticlePool, &gParticleCacheSystem, params);
+      }
+      if (effects.fireworks)
+      {
+         IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
+         IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl0dc);
+
+         D3DParticleSystemUpdateBurst(&gParticleSystemFireworks, &gParticlePool, &gParticleCacheSystem, params);
+      }
+      timeParticles = timeGetTime() - timeParticles;
+
+      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mIdentity);
+      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mIdentity);
+      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mIdentity);
    }
 
    /***************************************************************************/
@@ -1274,10 +1323,9 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
          CHUNK_INDEX_SET(pChunk, 3, 3);
       }
 
-      MatrixIdentity(&mat);
-      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mat);
-      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mat);
-      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mat);
+      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mIdentity);
+      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mIdentity);
+      IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mIdentity);
       IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ZENABLE, FALSE);
 
       D3DRENDER_SET_ALPHATEST_STATE(gpD3DDevice, FALSE, 1, D3DCMP_GREATEREQUAL);
@@ -1292,7 +1340,7 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
    /***************************************************************************/
    /*                             VIEW ELEMENTS                               */
    /***************************************************************************/
-   
+
    if (1)
    {
       D3DRENDER_SET_COLOR_STAGE(gpD3DDevice, 1, D3DTOP_DISABLE, 0, 0);
@@ -1304,6 +1352,9 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
       IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
       IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MINFILTER, D3DTEXF_POINT);
 
+      if (config.aaMode > 0)
+         IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_MULTISAMPLEANTIALIAS, FALSE);
+
       IDirect3DDevice9_SetVertexShader(gpD3DDevice, NULL);
       IDirect3DDevice9_SetVertexDeclaration(gpD3DDevice, decl1dc);
 
@@ -1312,6 +1363,9 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
       D3DRenderViewElementsDraw(&gObjectPool);
       D3DCacheFill(&gObjectCacheSystem, &gObjectPool, 1);
       D3DCacheFlush(&gObjectCacheSystem, &gObjectPool, 1, D3DPT_TRIANGLESTRIP);
+
+      if (config.aaMode > 0)
+         IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_MULTISAMPLEANTIALIAS, TRUE);
 
       IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MAGFILTER, gD3DDriverProfile.magFilter);
       IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_MINFILTER, gD3DDriverProfile.minFilter);
@@ -1340,14 +1394,10 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
       // completely shutdown & restart D3D9
       if (hr == D3DERR_DEVICENOTRESET)
       {      
-         D3DRenderShutDown();
-         gFrame = 0;
-         gD3DRedrawAll |= D3DRENDER_REDRAW_ALL;
-         D3DRenderInit(hMain);
-         D3DParticlesInit(false);
+         D3DRenderReset();
       }
    }
-   
+
    timeOverall = timeGetTime() - timeOverall;
 //   debug(("number of objects = %d\n", gNumObjects));
    if ((gFrame & 255) == 255)
@@ -1356,6 +1406,17 @@ void D3DRenderBegin(room_type *room, Draw3DParams *params)
 
    //debug(("all = %d lmaps = %d wrld = %d obj = %d  particles = %d sky = %d init = %d\n",
       //timeOverall, timeLMaps, timeWorld, timeObjects, timeParticles, timeSkybox+timeSkybox2, timeInit));
+}
+
+// Resets the renderer.
+void D3DRenderReset()
+{
+   D3DRenderShutDown();
+   gFrame = 0;
+   gD3DRedrawAll |= D3DRENDER_REDRAW_ALL;
+   D3DRenderInit(hMain);
+   // Particle systems were stopped, reset the emitters.
+   D3DParticlesInit(false);
 }
 
 void D3DRenderWorldDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DParams *params)
@@ -3138,8 +3199,8 @@ Bool D3DComputePlayerOverlayArea(PDIB pdib, char hotspot, AREA *obj_area)
 void D3DRenderNamesDraw3D(d3d_render_cache_system *pCacheSystem, d3d_render_pool_new *pPool,
                   room_type *room, Draw3DParams *params, font_3d *pFont)
 {
-   D3DMATRIX         mat, rot, xForm, trans;
-   int               angleHeading, anglePitch, strLen, sector_flags, offset;
+   D3DMATRIX         mat, xForm, trans;
+   int               strLen, sector_flags, offset;
    room_contents_node   *pRNode;
    list_type         list;
    long            dx, dy, angle, top, bottom;
@@ -3156,12 +3217,6 @@ void D3DRenderNamesDraw3D(d3d_render_cache_system *pCacheSystem, d3d_render_pool
 
    d3d_render_packet_new   *pPacket;
    d3d_render_chunk_new   *pChunk;
-
-   angleHeading = params->viewer_angle + 3072;
-   if (angleHeading >= 4096)
-      angleHeading -= 4096;
-
-   anglePitch = PlayerGetHeightOffset();
 
    // base objects
    for (list = room->contents; list != NULL; list = list->next)
@@ -3247,13 +3302,11 @@ void D3DRenderNamesDraw3D(d3d_render_cache_system *pCacheSystem, d3d_render_pool
 
 //         z += ((float)pRNode->boundingHeightAdjust * 4.0f);// / 1.66f;
 
-      MatrixRotateY(&rot, (float)angleHeading * 360.0f / 4096.0f * PI / 180.0f);
-      MatrixTranspose(&rot, &rot);
       MatrixTranslate(&mat, (float)pRNode->motion.x, (float)max(bottom,
          pRNode->motion.z) - depth +
          (((float)pDib->height / (float)pDib->shrink * 16.0f) - (float)pDib->yoffset * 4.0f) +
          ((float)pRNode->boundingHeightAdjust * 4.0f), (float)pRNode->motion.y);
-      MatrixMultiply(&xForm, &rot, &mat);
+      MatrixMultiply(&xForm, &mPlayerHeadingTrans, &mat);
 
       fg_color = GetPlayerNameColor(&pRNode->obj, pName);
 
@@ -3431,7 +3484,8 @@ void D3DRenderNamesDraw3D(d3d_render_cache_system *pCacheSystem, d3d_render_pool
    }
 }
 
-// straight texture loader for objects
+// Texture loader for BGF files. No longer need to load rotated textures separately,
+// uv coords are flipped for floor/wall/ceilings.
 LPDIRECT3DTEXTURE9 D3DRenderTextureCreateFromBGF(PDIB pDib, BYTE xLat0, BYTE xLat1,
                                       BYTE effect)
 {
@@ -3495,228 +3549,90 @@ LPDIRECT3DTEXTURE9 D3DRenderTextureCreateFromBGF(PDIB pDib, BYTE xLat0, BYTE xLa
       skipValH = 1;
    }
 
-   k = -newWidth;
-   l = -newHeight;
-
    pBits = DibPtr(pDib);
 
+   int reqMipMaps = numMipMaps;
+   if (reqMipMaps > 1 && (newWidth < 16 || newHeight < 16))
+      reqMipMaps = 1;
+
    if (gD3DDriverProfile.bManagedTextures)
-      IDirect3DDevice9_CreateTexture(gpD3DDevice, newWidth, newHeight, 1, 0,
+      IDirect3DDevice9_CreateTexture(gpD3DDevice, newWidth, newHeight, reqMipMaps, 0,
                                      D3DFMT_A1R5G5B5, D3DPOOL_MANAGED, &pTexture, NULL);
    else
-      IDirect3DDevice9_CreateTexture(gpD3DDevice, newWidth, newHeight, 1, 0,
+      IDirect3DDevice9_CreateTexture(gpD3DDevice, newWidth, newHeight, reqMipMaps, 0,
                                      D3DFMT_A1R5G5B5, D3DPOOL_SYSTEMMEM, &pTexture, NULL);
 
    if (pTexture == NULL)
       return NULL;
 
-   IDirect3DTexture9_LockRect(pTexture, 0, &lockedRect, NULL, 0);
-
-   pitchHalf = lockedRect.Pitch / 2;
-
-   pPixels16 = (unsigned short *)lockedRect.pBits;
-
-   for (si = 0, di = 0; di < newHeight; si++, di++)
+   // If we are using mipmaps, need to modify each texture level.
+   int pNewHeight = newHeight;
+   int pNewWidth = newWidth;
+   int levelAdd = 1;
+   for (DWORD iLevel = 0; iLevel < pTexture->GetLevelCount(); ++iLevel, levelAdd *= 2)
    {
-      if (diffHeight)
-         if ((l += diffHeight) >= 0)
-         {
-            si += skipValH;
-            l -= newHeight;
-         }
+      k = -pNewWidth;
+      l = -pNewHeight;
 
-      for (dj = 0, sj = 0; dj < newWidth; dj++, sj++)
-      {
-         if (diffWidth)
-            if ((k += diffWidth) >= 0)
-            {
-               sj += skipValW;
-               k -= newWidth;
-            }
+      IDirect3DTexture9_LockRect(pTexture, iLevel, &lockedRect, NULL, 0);
 
-         // 16bit 1555 textures
-         if (gPalette[pBits[si * pDib->width + sj]].peFlags != 0)
-         {
-            pPixels16[di * pitchHalf + dj] =
-               (gPalette[pBits[si * pDib->width + sj]].peBlue >> 3) |
-               ((gPalette[pBits[si * pDib->width + sj]].peGreen >> 3) << 5) |
-               ((gPalette[pBits[si * pDib->width + sj]].peRed >> 3) << 10);
-            pPixels16[di * pitchHalf + dj] |=
-               gPalette[pBits[si * pDib->width + sj]].peFlags ? (1 << 15) : 0;
+      pitchHalf = lockedRect.Pitch / 2;
+      pPixels16 = (unsigned short *)lockedRect.pBits;
 
-            lastColor.red = gPalette[pBits[si * pDib->width + sj]].peRed;
-            lastColor.green = gPalette[pBits[si * pDib->width + sj]].peGreen;
-            lastColor.blue = gPalette[pBits[si * pDib->width + sj]].peBlue;
-         }
-         else
-         {
-            pPixels16[di * pitchHalf + dj] =
-               (lastColor.blue >> 3) |
-               ((lastColor.green >> 3) << 5) |
-               ((lastColor.red >> 3) << 10);
-            pPixels16[di * pitchHalf + dj] |=
-               gPalette[pBits[si * pDib->width + sj]].peFlags ? (1 << 15) : 0;
-         }
-      }
-   }
-
-   IDirect3DTexture9_UnlockRect(pTexture, 0);
-
-   if (gD3DDriverProfile.bManagedTextures == FALSE)
-   {
-      IDirect3DDevice9_CreateTexture(gpD3DDevice, newWidth, newHeight, 1, 0,
-                                     D3DFMT_A1R5G5B5, D3DPOOL_DEFAULT, &pTextureFinal, NULL);
-
-      if (pTextureFinal)
-      {
-         IDirect3DTexture9_AddDirtyRect(pTextureFinal, NULL);
-         IDirect3DDevice9_UpdateTexture(
-            gpD3DDevice, (IDirect3DBaseTexture9 *) pTexture,
-            (IDirect3DBaseTexture9 *) pTextureFinal);
-      }
-      IDirect3DDevice9_Release(pTexture);
-
-      return pTextureFinal;
-   }
-   else
-      return pTexture;
-}
-
-// texture loader that rotates for walls and such
-LPDIRECT3DTEXTURE9 D3DRenderTextureCreateFromBGFSwizzled(PDIB pDib, BYTE xLat0, BYTE xLat1,
-                                      BYTE effect)
-{
-   D3DLOCKED_RECT      lockedRect;
-   LPDIRECT3DTEXTURE9   pTexture = NULL;
-   LPDIRECT3DTEXTURE9   pTextureFinal = NULL;
-   unsigned char      *pBits = NULL;
-   unsigned int      w, h;
-   unsigned short      *pPixels16;
-   int               si, sj, di, dj;
-   int               k, l, newWidth,   newHeight, diffWidth, diffHeight;
-   int               skipValW, skipValH, pitchHalf;
-   Color            lastColor;
-
-   lastColor.red = 128;
-   lastColor.green = 128;
-   lastColor.blue = 128;
-
-   D3DRenderPaletteSetNew(xLat0, xLat1, effect);
-
-   skipValW = skipValH = 1;
-
-   // convert to power of 2 texture, rounding down
-   w = h = 0x80000000;
-
-   while (!(w & pDib->width))
-      w = w >> 1;
-
-   while (!(h & pDib->height))
-      h = h >> 1;
-
-   // if either dimension is less than 256 pixels, round it back up
-   if (pDib->width < D3DRENDER_TEXTURE_THRESHOLD)
-   {
-      if (w != pDib->width)
-         w <<= 1;
-
-      newWidth = w;
-      diffWidth = newWidth - pDib->width;
-      skipValW = -1;
-   }
-   else
-   {
-      newWidth = w;
-      diffWidth = pDib->width - newWidth;
-      skipValW = 1;
-   }
-
-   if (pDib->height < D3DRENDER_TEXTURE_THRESHOLD)
-   {
-      if (h != pDib->height)
-         h <<= 1;
-
-      newHeight = h;
-      diffHeight = newHeight - pDib->height;
-      skipValH = -1;
-   }
-   else
-   {
-      newHeight = h;
-      diffHeight = pDib->height - newHeight;
-      skipValH = 1;
-   }
-
-   k = -newWidth;
-   l = -newHeight;
-
-   pBits = DibPtr(pDib);
-
-   if (gD3DDriverProfile.bManagedTextures)
-      IDirect3DDevice9_CreateTexture(gpD3DDevice, newHeight, newWidth, 1, 0,
-                                     D3DFMT_A1R5G5B5, D3DPOOL_MANAGED, &pTexture, NULL);
-   else
-      IDirect3DDevice9_CreateTexture(gpD3DDevice, newHeight, newWidth, 1, 0,
-                                     D3DFMT_A1R5G5B5, D3DPOOL_SYSTEMMEM, &pTexture, NULL);
-   
-   if (NULL == pTexture)
-      return NULL;
-
-   IDirect3DTexture9_LockRect(pTexture, 0, &lockedRect, NULL, 0);
-
-   pitchHalf = lockedRect.Pitch / 2;
-
-   pPixels16 = (unsigned short *)lockedRect.pBits;
-
-   for (si = 0, di = 0; di < newWidth; si++, di++)
-   {
-      if (diffWidth)
-         if ((k += diffWidth) >= 0)
-         {
-            si += skipValW;
-            k -= newWidth;
-         }
-
-      for (dj = 0, sj = 0; dj < newHeight; dj++, sj++)
+      for (si = 0, di = 0; di < newHeight; si += levelAdd, di++)
       {
          if (diffHeight)
             if ((l += diffHeight) >= 0)
             {
-               sj += skipValH;
-               l -= newHeight;
+               si += skipValH;
+               l -= pNewHeight;
             }
 
-         // 16bit 1555 textures
-         if (gPalette[pBits[(sj * pDib->width) + si]].peFlags != 0)
+         for (dj = 0, sj = 0; dj < newWidth; dj++, sj += levelAdd)
          {
-            pPixels16[di * pitchHalf + dj] =
-               (gPalette[pBits[(sj * pDib->width) + si]].peBlue >> 3) |
-               ((gPalette[pBits[(sj * pDib->width) + si]].peGreen >> 3) << 5) |
-               ((gPalette[pBits[(sj * pDib->width) + si]].peRed >> 3) << 10);
-            pPixels16[di * pitchHalf + dj] |=
-               gPalette[pBits[(sj * pDib->width) + si]].peFlags ? (1 << 15) : 0;
+            if (diffWidth)
+               if ((k += diffWidth) >= 0)
+               {
+                  sj += skipValW;
+                  k -= pNewWidth;
+               }
 
-            lastColor.red = gPalette[pBits[(sj * pDib->width) + si]].peRed;
-            lastColor.green = gPalette[pBits[(sj * pDib->width) + si]].peGreen;
-            lastColor.blue = gPalette[pBits[(sj * pDib->width) + si]].peBlue;
-         }
-         else
-         {
-            pPixels16[di * pitchHalf + dj] =
-               (lastColor.blue >> 3) |
-               ((lastColor.green >> 3) << 5) |
-               ((lastColor.red >> 3) << 10);
-            pPixels16[di * pitchHalf + dj] |=
-               gPalette[pBits[(sj * pDib->width) + si]].peFlags ? (1 << 15) : 0;
+            // 16bit 1555 textures
+            if (gPalette[pBits[si * pDib->width + sj]].peFlags != 0)
+            {
+               pPixels16[di * pitchHalf + dj] =
+                  (gPalette[pBits[si * pDib->width + sj]].peBlue >> 3) |
+                  ((gPalette[pBits[si * pDib->width + sj]].peGreen >> 3) << 5) |
+                  ((gPalette[pBits[si * pDib->width + sj]].peRed >> 3) << 10);
+               pPixels16[di * pitchHalf + dj] |=
+                  gPalette[pBits[si * pDib->width + sj]].peFlags ? (1 << 15) : 0;
+
+               lastColor.red = gPalette[pBits[si * pDib->width + sj]].peRed;
+               lastColor.green = gPalette[pBits[si * pDib->width + sj]].peGreen;
+               lastColor.blue = gPalette[pBits[si * pDib->width + sj]].peBlue;
+            }
+            else
+            {
+               pPixels16[di * pitchHalf + dj] =
+                  (lastColor.blue >> 3) |
+                  ((lastColor.green >> 3) << 5) |
+                  ((lastColor.red >> 3) << 10);
+               pPixels16[di * pitchHalf + dj] |=
+                  gPalette[pBits[si * pDib->width + sj]].peFlags ? (1 << 15) : 0;
+            }
          }
       }
-   }
 
-   IDirect3DTexture9_UnlockRect(pTexture, 0);
+      IDirect3DTexture9_UnlockRect(pTexture, iLevel);
+      newWidth /= 2;
+      newHeight /= 2;
+      skipValW *= 2;
+      skipValH *= 2;
+   }
 
    if (gD3DDriverProfile.bManagedTextures == FALSE)
    {
-      IDirect3DDevice9_CreateTexture(gpD3DDevice, newHeight, newWidth, 1, 0,
+      IDirect3DDevice9_CreateTexture(gpD3DDevice, pNewWidth, pNewHeight, reqMipMaps, 0,
                                      D3DFMT_A1R5G5B5, D3DPOOL_DEFAULT, &pTextureFinal, NULL);
 
       if (pTextureFinal)
@@ -4507,34 +4423,20 @@ void D3DRenderFontInit(font_3d *pFont, HFONT hFont)
    DeleteDC(hDC);
 }
 
-void D3DRenderSkyboxDraw(d3d_render_pool_new *pPool, int angleHeading, int anglePitch)
+void D3DRenderSkyboxDraw(d3d_render_pool_new *pPool)
 {
-   int         i, j;
-   D3DMATRIX   rot, mat;
-
    d3d_render_packet_new   *pPacket;
    d3d_render_chunk_new   *pChunk;
 
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHABLENDENABLE, FALSE);
 
-   MatrixIdentity(&mat);
-   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mat);
-
-   MatrixRotateY(&rot, (float)angleHeading * 360.0f / 4096.0f * PI / 180.0f);
-   MatrixRotateX(&mat, (float)anglePitch * 45.0f / 414.0f * PI / 180.0f);
-   MatrixMultiply(&mat, &rot, &mat);
-
-   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mat);
+   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mIdentity);
+   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mPlayerHPMul);
 
 //   XformMatrixPerspective(&mat, -PI / 4.0f, PI / 6.0f, 100.0f, 150000.0f);
 //   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mat);
 
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-                D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-            D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
-
-   for (i = 0; i < 6; i++)
+   for (int i = 0; i < 6; ++i)
    {
       pPacket = D3DRenderPacketFindMatch(pPool, gpSkyboxTextures[gCurBackground][i], NULL, 0, 0, 0);
       if (NULL == pPacket)
@@ -4551,7 +4453,7 @@ void D3DRenderSkyboxDraw(d3d_render_pool_new *pPool, int angleHeading, int angle
       pChunk->flags |= D3DRENDER_NOAMBIENT;
 
       // add xyz, st, and bgra data
-      for (j = 0; j < 4; j++)
+      for (int j = 0; j < 4; ++j)
       {
          pChunk->xyz[j].x = gSkyboxXYZ[(i * 4 * 3) + (j * 3)];
          pChunk->xyz[j].z = gSkyboxXYZ[(i * 4 * 3) + (j * 3) + 1];
@@ -4571,11 +4473,6 @@ void D3DRenderSkyboxDraw(d3d_render_pool_new *pPool, int angleHeading, int angle
       pChunk->indices[2] = 0;
       pChunk->indices[3] = 3;
    }
-
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-            D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-            D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
 }
 
 /*
@@ -4685,6 +4582,7 @@ void D3DExtractCeilingFromTree(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, cust
    }
 }
 
+// UV coords reversed for rotated texture.
 int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom_xyz *pXYZ,
                     custom_st *pST, custom_bgra *pBGRA, unsigned int type, int side)
 {
@@ -4859,27 +4757,8 @@ int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom
    if (pSideDef->flags & WF_TRANSPARENT)
       *flags |= D3DRENDER_TRANSPARENT;
 
-   switch (type)
-   {
-      case D3DRENDER_WALL_NORMAL:
-         if (pSideDef->flags & WF_NO_VTILE)
-               *flags |= D3DRENDER_NO_VTILE;
-      break;
-
-/*      case D3DRENDER_WALL_BELOW:
-         if (pSideDef->flags & WF_NO_VTILE)
-            if (NULL == pSideDef->normal_bmap)
-               *flags |= D3DRENDER_NO_VTILE;
-      break;
-
-      case D3DRENDER_WALL_ABOVE:
-         if (pSideDef->flags & WF_NO_VTILE)
-            *flags |= D3DRENDER_NO_VTILE;
-      break;*/
-
-      default:
-      break;
-   }
+   if (type == D3DRENDER_WALL_NORMAL && (pSideDef->flags & WF_NO_VTILE))
+      *flags |= D3DRENDER_NO_VTILE;
 
    if ((pXYZ) && (pST))
    {
@@ -4894,10 +4773,10 @@ int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom
       invWidthFudge = 1.0f / ((float)pDib->width * PETER_FUDGE);
       invHeightFudge = 1.0f / ((float)pDib->height * PETER_FUDGE);
 
-      pST[0].s = (float)xOffset * (float)(pDib->shrink) * invHeight;
-      pST[1].s = (float)xOffset * (float)(pDib->shrink) * invHeight;
-      pST[3].s = (float)(pST[0].s + ((float)pWall->length * (float)pDib->shrink) * invHeight);
-      pST[2].s = (float)(pST[1].s + ((float)pWall->length * (float)pDib->shrink) * invHeight);
+      pST[0].t = (float)xOffset * (float)(pDib->shrink) * invHeight;
+      pST[1].t = (float)xOffset * (float)(pDib->shrink) * invHeight;
+      pST[3].t = (float)(pST[0].t + ((float)pWall->length * (float)pDib->shrink) * invHeight);
+      pST[2].t = (float)(pST[1].t + ((float)pWall->length * (float)pDib->shrink) * invHeight);
 
       if (!drawTopDown)
       {
@@ -4919,26 +4798,26 @@ int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom
 
          if (pXYZ[1].z == pXYZ[2].z)
          {
-            pST[1].t = 1.0f - (((float)yOffset * (float)pDib->shrink)
+            pST[1].s = 1.0f - (((float)yOffset * (float)pDib->shrink)
                * invWidth);
-            pST[2].t = 1.0f - (((float)yOffset * (float)pDib->shrink)
+            pST[2].s = 1.0f - (((float)yOffset * (float)pDib->shrink)
                * invWidth);
          }
          else
          {
-            pST[1].t = 1.0f - (((float)yOffset * (float)pDib->shrink)
+            pST[1].s = 1.0f - (((float)yOffset * (float)pDib->shrink)
                *invWidth);
-            pST[2].t = 1.0f - (((float)yOffset * (float)pDib->shrink)
+            pST[2].s = 1.0f - (((float)yOffset * (float)pDib->shrink)
                * invWidth);
-            pST[1].t -= (pXYZ[1].z - bottom) * (float)pDib->shrink
+            pST[1].s -= (pXYZ[1].z - bottom) * (float)pDib->shrink
                   * invWidthFudge;
-            pST[2].t -= (pXYZ[2].z - bottom) * (float)pDib->shrink
+            pST[2].s -= (pXYZ[2].z - bottom) * (float)pDib->shrink
                   * invWidthFudge;
          }
 
-         pST[0].t = pST[1].t -
+         pST[0].s = pST[1].s -
             ((pXYZ[0].z - pXYZ[1].z) * (float)pDib->shrink * invWidthFudge);
-         pST[3].t = pST[2].t -
+         pST[3].s = pST[2].s -
             ((pXYZ[3].z - pXYZ[2].z) * (float)pDib->shrink * invWidthFudge);
       }
       else   // else, need to place tex origin at top left
@@ -4961,23 +4840,23 @@ int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom
 
          if (pXYZ[0].z == pXYZ[3].z)
          {
-            pST[0].t = 0.0f;
-            pST[3].t = 0.0f;
+            pST[0].s = 0.0f;
+            pST[3].s = 0.0f;
          }
          else
          {
-            pST[0].t = ((float)top - pXYZ[0].z) * (float)pDib->shrink
+            pST[0].s = ((float)top - pXYZ[0].z) * (float)pDib->shrink
                   * invWidthFudge;
-            pST[3].t = ((float)top - pXYZ[3].z) * (float)pDib->shrink
+            pST[3].s = ((float)top - pXYZ[3].z) * (float)pDib->shrink
                   * invWidthFudge;
          }
 
-         pST[0].t -= ((float)(yOffset * pDib->shrink) * invWidth);
-         pST[3].t -= ((float)(yOffset * pDib->shrink) * invWidth);
+         pST[0].s -= ((float)(yOffset * pDib->shrink) * invWidth);
+         pST[3].s -= ((float)(yOffset * pDib->shrink) * invWidth);
 
-         pST[1].t = pST[0].t + ((pXYZ[0].z - pXYZ[1].z) * (float)pDib->shrink
+         pST[1].s = pST[0].s + ((pXYZ[0].z - pXYZ[1].z) * (float)pDib->shrink
             * invWidthFudge);
-         pST[2].t = pST[3].t + ((pXYZ[3].z - pXYZ[2].z) * (float)pDib->shrink
+         pST[2].s = pST[3].s + ((pXYZ[3].z - pXYZ[2].z) * (float)pDib->shrink
             * invWidthFudge);
       }
 
@@ -4988,9 +4867,9 @@ int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom
          {
             for (i = 0; i < 4; i++)
             {
-               pST[i].s -= pSideDef->animate->u.scroll.xoffset * pDib->shrink *
+               pST[i].t -= pSideDef->animate->u.scroll.xoffset * pDib->shrink *
                   invHeight;
-               pST[i].t += pSideDef->animate->u.scroll.yoffset * pDib->shrink *
+               pST[i].s += pSideDef->animate->u.scroll.yoffset * pDib->shrink *
                   invWidth;
             }
          }
@@ -4998,9 +4877,9 @@ int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom
          {
             for (i = 0; i < 4; i++)
             {
-               pST[i].s += pSideDef->animate->u.scroll.xoffset * pDib->shrink *
+               pST[i].t += pSideDef->animate->u.scroll.xoffset * pDib->shrink *
                   invHeight;
-               pST[i].t -= pSideDef->animate->u.scroll.yoffset * pDib->shrink *
+               pST[i].s -= pSideDef->animate->u.scroll.yoffset * pDib->shrink *
                   invWidth;
             }
          }
@@ -5010,13 +4889,13 @@ int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom
       {
          float   temp;
 
-         temp = pST[3].s;
-         pST[3].s = pST[0].s;
-         pST[0].s = temp;
+         temp = pST[3].t;
+         pST[3].t = pST[0].t;
+         pST[0].t = temp;
 
-         temp = pST[2].s;
-         pST[2].s = pST[1].s;
-         pST[1].s = temp;
+         temp = pST[2].t;
+         pST[2].t = pST[1].t;
+         pST[1].t = temp;
       }
 
 /*      if (pSideDef->flags & WF_NO_VTILE)
@@ -5030,45 +4909,45 @@ int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom
 
       if (*flags & D3DRENDER_NO_VTILE)
       {
-         if (pST[0].t < 0.0f)
+         if (pST[0].s < 0.0f)
          {
             float   tex, wall, ratio, temp;
 
-            tex = pST[1].t - pST[0].t;
+            tex = pST[1].s - pST[0].s;
             if (tex == 0)
                tex = 1.0f;
-            temp = -pST[0].t;
+            temp = -pST[0].s;
             ratio = temp / tex;
 
             wall = pXYZ[0].z - pXYZ[1].z;
             temp = wall * ratio;
             pXYZ[0].z -= temp;
-            pST[0].t = 0.0f;
+            pST[0].s = 0.0f;
          }
-         if (pST[3].t < 0.0f)
+         if (pST[3].s < 0.0f)
          {
             float   tex, wall, ratio, temp;
 
-            tex = pST[2].t - pST[3].t;
+            tex = pST[2].s - pST[3].s;
             if (tex == 0)
                tex = 1.0f;
-            temp = -pST[3].t;
+            temp = -pST[3].s;
             ratio = temp / tex;
 
             wall = pXYZ[3].z - pXYZ[2].z;
             temp = wall * ratio;
             pXYZ[3].z -= temp;
-            pST[3].t = 0.0f;
+            pST[3].s = 0.0f;
          }
 
          pXYZ[1].z -= 16.0f;
          pXYZ[2].z -= 16.0f;
       }
 
-      pST[0].t += 1.0f / pDib->width;
-      pST[3].t += 1.0f / pDib->width;
-      pST[1].t -= 1.0f / pDib->width;
-      pST[2].t -= 1.0f / pDib->width;
+      pST[0].s += 1.0f / pDib->width;
+      pST[3].s += 1.0f / pDib->width;
+      pST[1].s -= 1.0f / pDib->width;
+      pST[2].s -= 1.0f / pDib->width;
    }
 
    if (pBGRA)
@@ -5130,6 +5009,7 @@ int D3DRenderWallExtract(WallData *pWall, PDIB pDib, unsigned int *flags, custom
    return 1;
 }
 
+// UV coords reversed for rotated texture.
 void D3DRenderFloorExtract(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, custom_st *pST,
                      custom_bgra *pBGRA)
 {
@@ -5222,7 +5102,7 @@ void D3DRenderFloorExtract(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, custom_s
                intersectTop.y = pSector->sloped_floor->p0.y +
                   U * (pSector->sloped_floor->p1.y - pSector->sloped_floor->p0.y);
 
-               pST[count].s = sqrt((pXYZ[count].x - intersectTop.x) *
+               pST[count].t = sqrt((pXYZ[count].x - intersectTop.x) *
                            (pXYZ[count].x - intersectTop.x) +
                            (pXYZ[count].z - intersectTop.z) *
                            (pXYZ[count].z - intersectTop.z) +
@@ -5255,15 +5135,15 @@ void D3DRenderFloorExtract(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, custom_s
                intersectLeft.y = pSector->sloped_floor->p0.y +
                   U * (pSector->sloped_floor->p2.y - pSector->sloped_floor->p0.y);
 
-               pST[count].t = sqrt((pXYZ[count].x - intersectLeft.x) *
+               pST[count].s = sqrt((pXYZ[count].x - intersectLeft.x) *
                            (pXYZ[count].x - intersectLeft.x) +
                            (pXYZ[count].z - intersectLeft.z) *
                            (pXYZ[count].z - intersectLeft.z) +
                            (pXYZ[count].y - intersectLeft.y) *
                            (pXYZ[count].y - intersectLeft.y));
 
-               pST[count].s += pSector->ty / 2.0f;
-               pST[count].t += pSector->tx / 2.0f;
+               pST[count].t += pSector->ty / 2.0f;
+               pST[count].s += pSector->tx / 2.0f;
 
                vectorU.x = pSector->sloped_floor->p1.x - pSector->sloped_floor->p0.x;
                vectorU.z = pSector->sloped_floor->p1.z - pSector->sloped_floor->p0.z;
@@ -5307,24 +5187,24 @@ void D3DRenderFloorExtract(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, custom_s
 
                if (((vector.x * vectorU.x) +
                   (vector.y * vectorU.y)) <= 0)
-                  pST[count].t = -pST[count].t;
+                  pST[count].s = -pST[count].s;
 
                if (((vector.x * vectorV.x) +
                   (vector.y * vectorV.y)) > 0)
-                  pST[count].s = -pST[count].s;
+                  pST[count].t = -pST[count].t;
             }
             else
             {
-               pST[count].s = fabs(pNode->u.leaf.poly.p[count].y - top) - pSector->ty;// / pDib->shrink;
-               pST[count].t = fabs(pNode->u.leaf.poly.p[count].x - left) - pSector->tx;// / pDib->shrink;
+               pST[count].t = fabs(pNode->u.leaf.poly.p[count].y - top) - pSector->ty;// / pDib->shrink;
+               pST[count].s = fabs(pNode->u.leaf.poly.p[count].x - left) - pSector->tx;// / pDib->shrink;
             }
 
             if (pSector->animate != NULL && pSector->animate->animation == ANIMATE_SCROLL)
             {
                if (pSector->flags & SF_SCROLL_FLOOR)
                {
-                  pST[count].s -= pSector->animate->u.scroll.yoffset;// * pDib->shrink;
-                  pST[count].t += pSector->animate->u.scroll.xoffset;// * pDib->shrink;
+                  pST[count].t -= pSector->animate->u.scroll.yoffset;// * pDib->shrink;
+                  pST[count].s += pSector->animate->u.scroll.xoffset;// * pDib->shrink;
                }
             }
 
@@ -5399,6 +5279,7 @@ void D3DRenderFloorExtract(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, custom_s
    }
 }
 
+// UV coords reversed for rotated texture.
 void D3DRenderCeilingExtract(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, custom_st *pST,
                      custom_bgra *pBGRA)
 {
@@ -5484,7 +5365,7 @@ void D3DRenderCeilingExtract(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, custom
                intersectTop.y = pSector->sloped_ceiling->p0.y +
                   U * (pSector->sloped_ceiling->p1.y - pSector->sloped_ceiling->p0.y);
 
-               pST[count].s = sqrt((pXYZ[count].x - intersectTop.x) *
+               pST[count].t = sqrt((pXYZ[count].x - intersectTop.x) *
                            (pXYZ[count].x - intersectTop.x) +
                            (pXYZ[count].z - intersectTop.z) *
                            (pXYZ[count].z - intersectTop.z) +
@@ -5517,7 +5398,7 @@ void D3DRenderCeilingExtract(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, custom
                intersectLeft.y = pSector->sloped_ceiling->p0.y +
                   U * (pSector->sloped_ceiling->p2.y - pSector->sloped_ceiling->p0.y);
 
-               pST[count].t = sqrt((pXYZ[count].x - intersectLeft.x) *
+               pST[count].s = sqrt((pXYZ[count].x - intersectLeft.x) *
                            (pXYZ[count].x - intersectLeft.x) +
                            (pXYZ[count].z - intersectLeft.z) *
                            (pXYZ[count].z - intersectLeft.z) +
@@ -5572,27 +5453,27 @@ void D3DRenderCeilingExtract(BSPnode *pNode, PDIB pDib, custom_xyz *pXYZ, custom
 
                if (((vector.x * vectorU.x) +
                   (vector.y * vectorU.y)) < 0)
-                  pST[count].t = -pST[count].t;
+                  pST[count].s = -pST[count].s;
 
                if (((vector.x * vectorV.x) +
                   (vector.y * vectorV.y)) > 0)
-                  pST[count].s = -pST[count].s;
+                  pST[count].t = -pST[count].t;
 
-               pST[count].s -= pSector->ty / 2.0f;
-               pST[count].t -= pSector->tx / 2.0f;
+               pST[count].t -= pSector->ty / 2.0f;
+               pST[count].s -= pSector->tx / 2.0f;
             }
             else
             {
-               pST[count].s = fabs(pNode->u.leaf.poly.p[count].y - top) - pSector->ty;
-               pST[count].t = fabs(pNode->u.leaf.poly.p[count].x - left) - pSector->tx;
+               pST[count].t = fabs(pNode->u.leaf.poly.p[count].y - top) - pSector->ty;
+               pST[count].s = fabs(pNode->u.leaf.poly.p[count].x - left) - pSector->tx;
             }
 
             if (pSector->animate != NULL && pSector->animate->animation == ANIMATE_SCROLL)
             {
                if (pSector->flags & SF_SCROLL_CEILING)
                {
-                  pST[count].s -= pSector->animate->u.scroll.yoffset;// * pDib->shrink;
-                  pST[count].t += pSector->animate->u.scroll.xoffset;// * pDib->shrink;
+                  pST[count].t -= pSector->animate->u.scroll.yoffset;// * pDib->shrink;
+                  pST[count].s += pSector->animate->u.scroll.xoffset;// * pDib->shrink;
                }
             }
 
@@ -5964,17 +5845,11 @@ void D3DGetBackgroundOverlayPosition(BackgroundOverlay *pOverlay, Draw3DParams *
 
 void D3DRenderBackgroundObjectsDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DParams *params)
 {
-   D3DMATRIX mat, rot;
+   D3DMATRIX mat;
    Pnt3D bObj;
    PDIB pDib;
    d3d_render_packet_new *pPacket = NULL;
    d3d_render_chunk_new  *pChunk = NULL;
-
-   // Background objects don't adjust angle, but we adjust the viewing angle
-   // for the player so they view the object face on.
-   int viewAngle = params->viewer_angle + 3072;
-   if (viewAngle >= 4096)
-      viewAngle -= 4096;
 
    for (list_type list = room->bg_overlays; list != NULL; list = list->next)
    {
@@ -6008,10 +5883,10 @@ void D3DRenderBackgroundObjectsDraw(d3d_render_pool_new *pPool, room_type *room,
       pChunk->pMaterialFctn = &D3DMaterialObjectChunk;
       pChunk->zBias = 0;
 
-      MatrixRotateY(&rot, (float)viewAngle * 360.0f / 4096.0f * PI / 180.0f);
-      MatrixTranspose(&rot, &rot);
+      // Background objects don't adjust angle, but we adjust the viewing angle
+      // for the player so they view the object face on.
       MatrixTranslate(&mat, (float)bObj.x, (float)bObj.z, (float)bObj.y);
-      MatrixMultiply(&pChunk->xForm, &rot, &mat);
+      MatrixMultiply(&pChunk->xForm, &mPlayerHeadingTrans, &mat);
 
       pChunk->xyz[0].x = (float)pDib->width / (float)pDib->shrink * -8.0f + (float)pDib->xoffset;
       pChunk->xyz[0].z = ((float)pDib->height / (float)pDib->shrink * 16.0f) - (float)pDib->yoffset * 4.0f;
@@ -6061,8 +5936,8 @@ void D3DRenderBackgroundObjectsDraw(d3d_render_pool_new *pPool, room_type *room,
 void D3DRenderObjectsDraw(d3d_render_pool_new *pPool, room_type *room,
                       Draw3DParams *params, BYTE flags, Bool drawTransparent)
 {
-   D3DMATRIX         mat, rot, trans;
-   int               angleHeading, anglePitch, i, curObject;
+   D3DMATRIX         mat;
+   int               i, curObject;
    room_contents_node   *pRNode;
    long            dx, dy, angle;
    PDIB            pDib;
@@ -6075,12 +5950,6 @@ void D3DRenderObjectsDraw(d3d_render_pool_new *pPool, room_type *room,
 
    d3d_render_packet_new   *pPacket = NULL;
    d3d_render_chunk_new   *pChunk = NULL;
-
-   angleHeading = params->viewer_angle + 3072;
-   if (angleHeading >= 4096)
-      angleHeading -= 4096;
-
-   anglePitch = PlayerGetHeightOffset();
 
    // base objects
    //for (list = room->contents; list != NULL; list = list->next)
@@ -6202,11 +6071,9 @@ void D3DRenderObjectsDraw(d3d_render_pool_new *pPool, room_type *room,
          }
       }
 
-      MatrixRotateY(&rot, (float)angleHeading * 360.0f / 4096.0f * PI / 180.0f);
-      MatrixTranspose(&rot, &rot);
       MatrixTranslate(&mat, (float)pRNode->motion.x, max(bottom, pRNode->motion.z) - depth,
          (float)pRNode->motion.y);
-      MatrixMultiply(&pChunk->xForm, &rot, &mat);
+      MatrixMultiply(&pChunk->xForm, &mPlayerHeadingTrans, &mat);
 
       xyz[0].x = (float)pDib->width / (float)pDib->shrink * -8.0f + (float)pDib->xoffset;
       xyz[0].z = ((float)pDib->height / (float)pDib->shrink * 16.0f) - (float)pDib->yoffset * 4.0f;
@@ -6333,14 +6200,10 @@ void D3DRenderObjectsDraw(d3d_render_pool_new *pPool, room_type *room,
          bottomRight.z = 0;
          bottomRight.w = 1.0f;
 
-         MatrixRotateY(&rot, (float)angleHeading * 360.0f / 4096.0f * PI / 180.0f);
-         MatrixRotateX(&mat, (float)anglePitch * 50.0f / 414.0f * PI / 180.0f);
-         MatrixMultiply(&rot, &rot, &mat);
-         MatrixTranslate(&trans, -(float)params->viewer_x, -(float)params->viewer_height, -(float)params->viewer_y);
-         MatrixMultiply(&mat, &trans, &rot);
+         MatrixMultiply(&rot, &mPlayerHeading, &mPlayerPitchFudge);
+         MatrixMultiply(&mat, &mPlayerViewTranslate, &rot);
          XformMatrixPerspective(&localToScreen, FOV_H, FOV_V, 1.0f, 2000000.0f);
-         MatrixMultiply(&mat, &pChunk->xForm,
-            &mat);
+         MatrixMultiply(&mat, &pChunk->xForm, &mat);
          MatrixMultiply(&localToScreen, &mat, &localToScreen);
 
          MatrixMultiplyVector(&topLeft, &localToScreen, &topLeft);
@@ -6463,7 +6326,7 @@ void D3DRenderObjectsDraw(d3d_render_pool_new *pPool, room_type *room,
          pChunk->zBias = ZBIAS_TARGETED;
          pChunk->isTargeted = TRUE;
 
-         MatrixMultiply(&pChunk->xForm, &rot, &mat);
+         MatrixMultiply(&pChunk->xForm, &mPlayerHeadingTrans, &mat);
 
          if (flags == DRAWFX_INVISIBLE)
          {
@@ -6536,8 +6399,8 @@ void D3DRenderObjectsDraw(d3d_render_pool_new *pPool, room_type *room,
 void D3DRenderOverlaysDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DParams *params,
                      BOOL underlays, BYTE flags, Bool drawTransparent)
 {
-   D3DMATRIX         mat, rot, trans;
-   int               angleHeading, anglePitch, i, curObject;
+   D3DMATRIX         mat;
+   int               i, curObject;
    room_contents_node   *pRNode;
    long            dx, dy, angle, top, bottom;
    PDIB            pDib, pDibOv, pDibOv2;
@@ -6551,12 +6414,6 @@ void D3DRenderOverlaysDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DPa
 
    d3d_render_packet_new   *pPacket = NULL;
    d3d_render_chunk_new   *pChunk = NULL;
-
-   angleHeading = params->viewer_angle + 3072;
-   if (angleHeading >= 4096)
-      angleHeading -= 4096;
-
-   anglePitch = PlayerGetHeightOffset();
 
    for (curObject = 0; curObject < nitems; curObject++)
    {
@@ -6918,11 +6775,9 @@ void D3DRenderOverlaysDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DPa
                   }
                }
 
-               MatrixRotateY(&rot, (float)angleHeading * 360.0f / 4096.0f * PI / 180.0f);
-               MatrixTranspose(&rot, &rot);
                MatrixTranslate(&mat, (float)pRNode->motion.x, (float)max(bottom,
                   pRNode->motion.z) - depthf, (float)pRNode->motion.y);
-               MatrixMultiply(&pChunk->xForm, &rot, &mat);
+               MatrixMultiply(&pChunk->xForm, &mPlayerHeadingTrans, &mat);
 
                lastDistance = 0;
 
@@ -6982,7 +6837,7 @@ void D3DRenderOverlaysDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DPa
                // now add object to visible object list
                if ((pRNode->obj.id != INVALID_ID) && (pRNode->obj.id != player.id))
                {
-                  D3DMATRIX   localToScreen, rot, mat;
+                  D3DMATRIX   localToScreen, mat;
                   custom_xyzw   topLeft, topRight, bottomLeft, bottomRight, center;
                   ObjectRange *range = FindVisibleObjectById(pRNode->obj.id);
                   int         w, h;
@@ -7012,14 +6867,9 @@ void D3DRenderOverlaysDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DPa
                   bottomRight.z = 0;
                   bottomRight.w = 1.0f;
 
-                  MatrixRotateY(&rot, (float)angleHeading * 360.0f / 4096.0f * PI / 180.0f);
-                  MatrixRotateX(&mat, (float)anglePitch * 50.0f / 414.0f * PI / 180.0f);
-                  MatrixMultiply(&rot, &rot, &mat);
-                  MatrixTranslate(&trans, -(float)params->viewer_x, -(float)params->viewer_height, -(float)params->viewer_y);
-                  MatrixMultiply(&mat, &trans, &rot);
+                  MatrixMultiply(&mat, &mPlayerViewTranslate, &mPlayerHPFudgeMul);
                   XformMatrixPerspective(&localToScreen, FOV_H, FOV_V, 1.0f, Z_RANGE);
-                  MatrixMultiply(&mat, &pChunk->xForm,
-                     &mat);
+                  MatrixMultiply(&mat, &pChunk->xForm, &mat);
                   MatrixMultiply(&localToScreen, &mat, &localToScreen);
 
                   MatrixMultiplyVector(&topLeft, &localToScreen, &topLeft);
@@ -7178,7 +7028,7 @@ void D3DRenderOverlaysDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DPa
                   pChunk->zBias = ZBIAS_TARGETED;
                   pChunk->isTargeted = TRUE;
 
-                  MatrixMultiply(&pChunk->xForm, &rot, &mat);
+                  MatrixMultiply(&pChunk->xForm, &mPlayerHeadingTrans, &mat);
 
                   if (flags == DRAWFX_INVISIBLE)
                   {
@@ -7259,9 +7109,7 @@ TEMP_END2:
 
 void D3DRenderProjectilesDrawNew(d3d_render_pool_new *pPool, room_type *room, Draw3DParams *params)
 {
-   D3DMATRIX         mat, rot;
-   int               angleHeading, anglePitch;
-   int               i;
+   D3DMATRIX         mat;
    Projectile         *pProjectile;
    list_type         list;
    long            dx, dy, angle;
@@ -7269,12 +7117,6 @@ void D3DRenderProjectilesDrawNew(d3d_render_pool_new *pPool, room_type *room, Dr
 
    d3d_render_packet_new   *pPacket;
    d3d_render_chunk_new   *pChunk;
-
-   angleHeading = params->viewer_angle + 3072;
-   if (angleHeading >= 4096)
-      angleHeading -= 4096;
-
-   anglePitch = PlayerGetHeightOffset();
 
    // base objects
    for (list = room->projectiles; list != NULL; list = list->next)
@@ -7317,11 +7159,9 @@ void D3DRenderProjectilesDrawNew(d3d_render_pool_new *pPool, room_type *room, Dr
       if (angle < -4096)
          angle += 4096;
 
-      MatrixRotateY(&rot, (float)angleHeading * 360.0f / 4096.0f * PI / 180.0f);
-      MatrixTranspose(&rot, &rot);
       MatrixTranslate(&mat, (float)pProjectile->motion.x, (float)pProjectile->motion.z,
          (float)pProjectile->motion.y);
-      MatrixMultiply(&pChunk->xForm, &rot, &mat);
+      MatrixMultiply(&pChunk->xForm, &mPlayerHeadingTrans, &mat);
 
       pChunk->xyz[0].x = (float)pDib->width / (float)pDib->shrink * -8.0f + (float)pDib->xoffset;
       pChunk->xyz[0].z = ((float)pDib->height / (float)pDib->shrink * 16.0f) - (float)pDib->yoffset * 4.0f;
@@ -7356,7 +7196,7 @@ void D3DRenderProjectilesDrawNew(d3d_render_pool_new *pPool, room_type *room, Dr
       pChunk->indices[2] = 0;
       pChunk->indices[3] = 3;
 
-      for (i = 0; i < 4; i++)
+      for (int i = 0; i < 4; i++)
       {
          pChunk->bgra[i].b = COLOR_MAX;
          pChunk->bgra[i].g = COLOR_MAX;
@@ -7370,7 +7210,6 @@ void D3DRenderProjectilesDrawNew(d3d_render_pool_new *pPool, room_type *room, Dr
 
 void D3DRenderPlayerOverlaysDraw(d3d_render_pool_new *pPool, room_type *room, Draw3DParams *params)
 {
-   D3DMATRIX         mat;
    room_contents_node   *pRNode;
    PDIB            pDib;
    custom_bgra         bgra;
@@ -7392,10 +7231,9 @@ void D3DRenderPlayerOverlaysDraw(d3d_render_pool_new *pPool, room_type *room, Dr
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, TEMP_ALPHA_REF);
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHABLENDENABLE, FALSE);
 
-   MatrixIdentity(&mat);
-   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mat);
-   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mat);
-   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mat);
+   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mIdentity);
+   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mIdentity);
+   IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mIdentity);
 
    // Get player's object drawing flags for special drawing effects
    pRNode = GetRoomObjectById(player.id);
@@ -8720,10 +8558,8 @@ Bool D3DMaterialWorldPool(d3d_render_pool_new *pPool)
    D3DRENDER_SET_COLOR_STAGE(gpD3DDevice, 0, D3DTOP_MODULATE, D3DTA_TEXTURE, D3DTA_DIFFUSE);
    D3DRENDER_SET_ALPHA_STAGE(gpD3DDevice, 0, D3DTOP_MODULATE, D3DTA_TEXTURE, D3DTA_DIFFUSE);
 
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-                                         D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-                                         D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
 
    return TRUE;
 }
@@ -8744,8 +8580,7 @@ Bool D3DMaterialWorldPacket(d3d_render_packet_new *pPacket, d3d_render_cache_sys
     pTexture = gFont.pTexture;
 
    if (pTexture)
-      IDirect3DDevice9_SetTexture(
-         gpD3DDevice, 0, (IDirect3DBaseTexture9 *) pTexture);
+      IDirect3DDevice9_SetTexture(gpD3DDevice, 0, (IDirect3DBaseTexture9 *) pTexture);
 
    return TRUE;
 }
@@ -8760,26 +8595,29 @@ Bool D3DMaterialWorldDynamicChunk(d3d_render_chunk_new *pChunk)
 
    if (pChunk->pSideDef == NULL)
    {
+      IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+
       if (pChunk->pSector)
       {
          if (pChunk->pSector->ceiling == current_room.sectors[0].ceiling)
-         {
             IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)0));
-         }
          else
-         {
             IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)ZBIAS_WORLD * -0.00001f));
-         }
       }
    }
    else
    {
+      if (pChunk->flags & D3DRENDER_NO_VTILE)
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+      else
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+
       IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)ZBIAS_WORLD * -0.00001f));
    }
 
    if (gD3DDriverProfile.bFogEnable)
    {
-      float   end;
+      float end;
 
       end = D3DRenderFogEndCalc(pChunk);
 
@@ -8795,8 +8633,8 @@ Bool D3DMaterialWorldStaticChunk(d3d_render_chunk_new *pChunk)
    {
       if (pChunk->pSector == &current_room.sectors[0])
       {
-         if ((pChunk->pSector->ceiling == current_room.sectors[0].ceiling) &&
-            (pChunk->pSector->ceiling != NULL))
+         if ((pChunk->pSector->ceiling == current_room.sectors[0].ceiling)
+            && (pChunk->pSector->ceiling != NULL))
             return FALSE;
       }
    }
@@ -8813,35 +8651,38 @@ Bool D3DMaterialWorldStaticChunk(d3d_render_chunk_new *pChunk)
       if (pChunk->pSectorNeg->flags & SF_HAS_ANIMATED)
          return FALSE;
 
-   if (pChunk->pSideDef)
-      if (pChunk->pSideDef->flags & WF_HAS_ANIMATED)
-         return FALSE;
 
    if (pChunk->pSideDef == NULL)
    {
+      IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+
       if (pChunk->pSector)
       {
          if (pChunk->pSector->ceiling == current_room.sectors[0].ceiling)
-         {
             IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)0));
-         }
          else
-         {
             IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)ZBIAS_WORLD * -0.00001f));
-         }
       }
    }
    else
    {
+      if (pChunk->pSideDef->flags & WF_HAS_ANIMATED)
+         return FALSE;
+
+      // Clamp texture vertically to remove stray pixels at the top.
+      if (pChunk->flags & D3DRENDER_NO_VTILE)
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+      else
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+
       IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)ZBIAS_WORLD * -0.00001f));
    }
 
    if (gD3DDriverProfile.bFogEnable)
    {
-      float   end;
+      float end;
 
       end = D3DRenderFogEndCalc(pChunk);
-
       IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_FOGEND, *(DWORD *)(&end));
    }
 
@@ -8853,10 +8694,8 @@ Bool D3DMaterialWallMaskPool(d3d_render_pool_new *pPool)
    D3DRENDER_SET_COLOR_STAGE(gpD3DDevice, 0, D3DTOP_MODULATE, D3DTA_TEXTURE, D3DTA_DIFFUSE);
    D3DRENDER_SET_ALPHA_STAGE(gpD3DDevice, 0, D3DTOP_MODULATE, D3DTA_TEXTURE, D3DTA_DIFFUSE);
 
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-                                         D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-                                         D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
 
    return TRUE;
 }
@@ -8880,15 +8719,10 @@ Bool D3DMaterialNone(d3d_render_chunk_new *pPool)
 
 Bool D3DMaterialLMapDynamicPool(d3d_render_pool_new *pPool)
 {
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-                                         D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-                                         D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
-
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1,
-                                         D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1,
-                                         D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
    
    IDirect3DDevice9_SetTexture(gpD3DDevice, 0, (IDirect3DBaseTexture9 *) gpDLightWhite);
 
@@ -8919,6 +8753,8 @@ Bool D3DMaterialLMapDynamicChunk(d3d_render_chunk_new *pChunk)
 {
    if (pChunk->pSideDef == NULL)
    {
+      IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+
       if (pChunk->pSector)
       {
          if (pChunk->pSector->ceiling == current_room.sectors[0].ceiling)
@@ -8933,6 +8769,11 @@ Bool D3DMaterialLMapDynamicChunk(d3d_render_chunk_new *pChunk)
    }
    else
    {
+      if (pChunk->flags & D3DRENDER_NO_VTILE)
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+      else
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+
       IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)ZBIAS_WORLD * -0.00001f));
    }
 
@@ -8943,20 +8784,23 @@ Bool D3DMaterialLMapStaticChunk(d3d_render_chunk_new *pChunk)
 {
    if (pChunk->pSideDef == NULL)
    {
+      IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+
       if (pChunk->pSector)
       {
          if (pChunk->pSector->ceiling == current_room.sectors[0].ceiling)
-         {
             IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)0));
-         }
          else
-         {
             IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)ZBIAS_WORLD * -0.00001f));
-         }
       }
    }
    else
    {
+      if (pChunk->flags & D3DRENDER_NO_VTILE)
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+      else
+         IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+
       IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)ZBIAS_WORLD * -0.00001f));
    }
 
@@ -9027,22 +8871,17 @@ Bool D3DMaterialObjectChunk(d3d_render_chunk_new *pChunk)
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)pChunk->zBias * -0.00001f));
 
    if (pChunk->drawingtype == DRAWFX_TRANSLUCENT25)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS25 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, D3DRENDER_TRANS25 - 1);
    else if (pChunk->drawingtype == DRAWFX_TRANSLUCENT50)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS50 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, D3DRENDER_TRANS50 - 1);
    else if (pChunk->drawingtype == DRAWFX_TRANSLUCENT75)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS75 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, D3DRENDER_TRANS75 - 1);
    else if (pChunk->drawingtype == DRAWFX_DITHERTRANS)
       IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, 1);
    else if (pChunk->drawingtype == DRAWFX_DITHERINVIS)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS50 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, D3DRENDER_TRANS50 - 1);
    else if (pChunk->drawingtype == DRAWFX_DITHERGREY)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS50 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, D3DRENDER_TRANS50 - 1);
    else
       IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, TEMP_ALPHA_REF);
 
@@ -9070,33 +8909,23 @@ Bool D3DMaterialObjectChunk(d3d_render_chunk_new *pChunk)
 
 Bool D3DMaterialObjectInvisiblePool(d3d_render_pool_new *pPool)
 {
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-                                         D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0,
-                                         D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
 
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1,
-                                         D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1,
-                                         D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
 
    D3DRENDER_SET_COLOR_STAGE(gpD3DDevice, 0, D3DTOP_SELECTARG2, D3DTA_TEXTURE, D3DTA_DIFFUSE);
    D3DRENDER_SET_ALPHA_STAGE(gpD3DDevice, 0, D3DTOP_SELECTARG1, D3DTA_TEXTURE, D3DTA_DIFFUSE);
    D3DRENDER_SET_COLOR_STAGE(gpD3DDevice, 1, D3DTOP_SELECTARG2, 0, D3DTA_TEXTURE);
    D3DRENDER_SET_ALPHA_STAGE(gpD3DDevice, 1, D3DTOP_SELECTARG1, D3DTA_CURRENT, 0);
 
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1,
-                                         D3DSAMP_MAGFILTER, D3DTEXF_POINT);
-   
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1,
-                                         D3DSAMP_MINFILTER, D3DTEXF_POINT);
-   
-   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1,
-                                         D3DSAMP_MIPFILTER, D3DTEXF_NONE);
-   
-   IDirect3DDevice9_SetTexture(
-      gpD3DDevice, 1, (IDirect3DBaseTexture9 *) gpBackBufferTex[0]);
-                 
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+   IDirect3DDevice9_SetSamplerState(gpD3DDevice, 1, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+
+   IDirect3DDevice9_SetTexture(gpD3DDevice, 1, (IDirect3DBaseTexture9 *) gpBackBufferTex[0]);
+
    return TRUE;
 }
 
@@ -9138,23 +8967,18 @@ Bool D3DMaterialObjectInvisibleChunk(d3d_render_chunk_new *pChunk)
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)pChunk->zBias * -0.00001f));
 
    if (pChunk->drawingtype == DRAWFX_TRANSLUCENT25)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS25 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, D3DRENDER_TRANS25 - 1);
    else if (pChunk->drawingtype == DRAWFX_TRANSLUCENT50)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS50 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, D3DRENDER_TRANS50 - 1);
    else if (pChunk->drawingtype == DRAWFX_TRANSLUCENT75)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS75 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, D3DRENDER_TRANS75 - 1);
    else if (pChunk->drawingtype == DRAWFX_DITHERTRANS)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, 1);
    else if (pChunk->drawingtype == DRAWFX_DITHERINVIS)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS50 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF, D3DRENDER_TRANS50 - 1);
    else if (pChunk->drawingtype == DRAWFX_DITHERGREY)
-      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,
-                                      D3DRENDER_TRANS50 - 1);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHAREF,  D3DRENDER_TRANS50 - 1);
+
    return TRUE;
 }
 
@@ -9181,8 +9005,7 @@ Bool D3DMaterialEffectPacket(d3d_render_packet_new *pPacket, d3d_render_cache_sy
       pTexture = pPacket->pTexture;
 
    if (pTexture)
-      IDirect3DDevice9_SetTexture(
-         gpD3DDevice, 0, (IDirect3DBaseTexture9 *) pTexture);
+      IDirect3DDevice9_SetTexture(gpD3DDevice, 0, (IDirect3DBaseTexture9 *) pTexture);
 
    return TRUE;
 }
@@ -9205,8 +9028,7 @@ Bool D3DMaterialBlurPacket(d3d_render_packet_new *pPacket, d3d_render_cache_syst
       pTexture = pPacket->pTexture;
 
    if (pTexture)
-      IDirect3DDevice9_SetTexture(gpD3DDevice, 0,
-                                  (IDirect3DBaseTexture9 *) pTexture);
+      IDirect3DDevice9_SetTexture(gpD3DDevice, 0, (IDirect3DBaseTexture9 *) pTexture);
 
    return TRUE;
 }
@@ -9218,13 +9040,13 @@ Bool D3DMaterialBlurChunk(d3d_render_chunk_new *pChunk)
 
 Bool D3DMaterialParticlePool(d3d_render_pool_new *pPool)
 {
-   IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHATESTENABLE, FALSE);
+   IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHATESTENABLE, TRUE);
+   D3DRENDER_SET_ALPHATEST_STATE(gpD3DDevice, TRUE, TEMP_ALPHA_REF, D3DCMP_GREATEREQUAL);
+   D3DRENDER_SET_ALPHABLEND_STATE(gpD3DDevice, TRUE, D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA);
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHABLENDENABLE, TRUE);
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
    IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
 
-   D3DRENDER_SET_COLOR_STAGE(gpD3DDevice, 0, D3DTOP_SELECTARG2, 0, D3DTA_DIFFUSE);
-   D3DRENDER_SET_ALPHA_STAGE(gpD3DDevice, 0, D3DTOP_SELECTARG2, 0, D3DTA_DIFFUSE);
    D3DRENDER_SET_COLOR_STAGE(gpD3DDevice, 1, D3DTOP_DISABLE, 0, 0);
    D3DRENDER_SET_ALPHA_STAGE(gpD3DDevice, 1, D3DTOP_DISABLE, 0, 0);
 
@@ -9233,12 +9055,34 @@ Bool D3DMaterialParticlePool(d3d_render_pool_new *pPool)
 
 Bool D3DMaterialParticlePacket(d3d_render_packet_new *pPacket, d3d_render_cache_system *pCacheSystem)
 {
+   if (pPacket->pTexture)
+   {
+      IDirect3DDevice9_SetTexture(gpD3DDevice, 0, (IDirect3DBaseTexture9 *)pPacket->pTexture);
+      D3DRENDER_SET_COLOR_STAGE(gpD3DDevice, 0, D3DTOP_MODULATE, D3DTA_TEXTURE, D3DTA_DIFFUSE);
+      D3DRENDER_SET_ALPHA_STAGE(gpD3DDevice, 0, D3DTOP_MODULATE, D3DTA_TEXTURE, D3DTA_DIFFUSE);
+   }
+   else
+   {
+      D3DRENDER_SET_COLOR_STAGE(gpD3DDevice, 0, D3DTOP_SELECTARG2, 0, D3DTA_DIFFUSE);
+      D3DRENDER_SET_ALPHA_STAGE(gpD3DDevice, 0, D3DTOP_SELECTARG2, 0, D3DTA_DIFFUSE);
+   }
+
+
    return TRUE;
 }
 
 Bool D3DMaterialParticleChunk(d3d_render_chunk_new *pChunk)
 {
    IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &pChunk->xForm);
+
+   IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_DEPTHBIAS, F2DW((float)0 * -0.00001f));
+   if (gD3DDriverProfile.bFogEnable)
+   {
+      float   end;
+
+      end = D3DRenderFogEndCalc(pChunk);
+      IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_FOGEND, *(DWORD *)(&end));
+   }
 
    return TRUE;
 }
@@ -9254,7 +9098,6 @@ LPDIRECT3DTEXTURE9 D3DRenderFramebufferTextureCreate(LPDIRECT3DTEXTURE9 pTex0,
 {
    LPDIRECT3DSURFACE9   pSrc, pDest[2], pZBuf;
    RECT            rect;
-   D3DMATRIX         mat;
    HRESULT            hr;
    d3d_render_packet_new   *pPacket;
    d3d_render_chunk_new   *pChunk;
@@ -9278,10 +9121,9 @@ LPDIRECT3DTEXTURE9 D3DRenderFramebufferTextureCreate(LPDIRECT3DTEXTURE9 pTex0,
    hr = IDirect3DDevice9_StretchRect(gpD3DDevice, pSrc, &rect, pDest[0], &rect, D3DTEXF_NONE);
    
    // clear local->screen transforms
-   MatrixIdentity(&mat);
-   hr = IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mat);
-   hr = IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mat);
-   hr = IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mat);
+   hr = IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_WORLD, &mIdentity);
+   hr = IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_VIEW, &mIdentity);
+   hr = IDirect3DDevice9_SetTransform(gpD3DDevice, D3DTS_PROJECTION, &mIdentity);
 
    hr = IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ALPHATESTENABLE, FALSE);
    hr = IDirect3DDevice9_SetRenderState(gpD3DDevice, D3DRS_ZWRITEENABLE, FALSE);
@@ -9402,18 +9244,12 @@ Bool IsHidden(Draw3DParams *params, long x0, long y0, long x1, long y1)
    x1 -= params->viewer_x;
    y1 -= params->viewer_y;
 
-   if (center_a * x0 + center_b * y0 < 0)
+   if (center_a * x0 + center_b * y0 < 0
+      && center_a * x0 + center_b * y1 < 0
+      && center_a * x1 + center_b * y0 < 0
+      && center_a * x1 + center_b * y1 < 0)
    {
-      if (center_a * x0 + center_b * y1 < 0)
-      {
-         if (center_a * x1 + center_b * y0 < 0)
-         {
-            if (center_a * x1 + center_b * y1 < 0)
-            {
-               return True;                /* all behind viewer */
-            }
-         }
-      }
+      return True;                /* all behind viewer */
    }
 
    long l0, l1, l2, l3, r0, r1, r2, r3;
