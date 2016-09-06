@@ -5,6 +5,6 @@
 !include $(TOPDIR)\common.mak
 
 DEPEND = ..\heal.bof
-BOFS = minheal.bof hospice.bof majheal.bof
+BOFS = minheal.bof hospice.bof majheal.bof chainheal.bof
 
 !include $(KODDIR)\kod.mak

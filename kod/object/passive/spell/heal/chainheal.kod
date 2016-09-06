@@ -1,0 +1,241 @@
+% Meridian 59, Copyright 1994-2012 Andrew Kirmse and Chris Kirmse.
+% All rights reserved.
+%
+% This software is distributed under a license that is described in
+% the LICENSE file that accompanies it.
+%
+% Meridian is a registered trademark.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ChainHeal is Heal
+
+constants:
+
+   include blakston.khd
+
+resources:
+
+   chainheal_name_rsc = "chain heal"
+   chainheal_icon_rsc = iheal.bgf
+   chainheal_desc_rsc = \
+      "Chain Heal Debugging. Takes herbs and emeralds."
+	  
+   chainheal_spell_intro = \
+      "Shal'ille Lv. 7: Heals the target then finds more allies."
+
+	  test_rsc = "Chain Heal lTargets"
+	  test_rsc2 = "Chain Heal lActive"
+	  
+classvars:
+   
+   vrName = chainheal_name_rsc
+   vrIcon = chainheal_icon_rsc
+   vrDesc = chainheal_desc_rsc
+   vrProjectile_icon = lightning_icon_rsc
+   
+   vrTestRsc = test_rsc
+   vrTestRsc2 = test_rsc2
+   
+   % vrCastSelf = chainheal_cast_self
+   % vrCastOther = chainheal_cast_rsc
+   vrSpell_intro = chainheal_spell_intro
+
+   viProjectileFlag = PROJ_FLAG_LIGHT_SOURCE
+   
+   viSpell_num = SID_CHAIN_HEAL
+   viMana = 5
+   viSchool = SS_SHALILLE
+   viSpell_level = 7
+   viChance_To_Increase = 95
+   viMeditate_ratio = 100
+   
+properties:
+
+   pbLogs = FALSE
+   pbDebug = FALSE
+   piDebugSpeed = 3
+   piDebugColor = 1
+   piIntensity = 100
+   piLightFlags = 1
+   
+messages:
+
+   ResetReagents()
+   {
+      % separate message so can change, then set from admin mode
+      plReagents = $;
+      plReagents = Cons([&Herbs,3],plReagents);
+      plReagents = Cons([&Emerald,3],plReagents);
+      %plReagents = Cons([&OrcTooth,3],plReagents);
+
+      return;
+   }
+   
+   CastSpell(who=$,lTargets=$)
+   {
+      local i,each_obj,lFinalTargets,oRoom,lActive,oFirst;
+	  oRoom = Send(who,@GetOwner);
+	  lActive = Send(oRoom,@GetHolderActive);
+	  
+	  %Debug("room = ",oRoom); %Gets the object number of their room
+	  % oFirst = First(Send(oRoom,@GetHolderActive));- "First =,LIST 80351"
+	  % oFirst = First(First(Send(oRoom,@GetHolderActive))); - "First = ,ACCOUNT 5 OBJECT 6981"
+	  oFirst = Send(oRoom,@HolderExtractObject,#data=First(Send(oRoom,@GetHolderActive)));
+	  % First(Send(oRoom,@GetHolderActive));
+	  Debug("First = ",oFirst);
+	  
+	  lFinalTargets = $;
+	  
+	  if pbLogs = TRUE
+      {
+         Debug("pbDebugSpeed = ",piDebugSpeed,"\npbDebugColor = ",piDebugColor);
+		 Debug("piIntensity = ",piIntensity,"\npiLightFlags = ",piLightFlags);
+      }
+
+	  
+	  foreach i in Send(Send(who,@GetOwner),@GetHolderActive)
+	  {
+	     each_obj = Send(Send(who,@GetOwner),@HolderExtractObject,#data=i);
+	     if IsClass(each_obj,&User)
+	     {
+		    %Get a list of all Users in the room.
+			%Check if the user is an ally/enemy/neutral
+			%Add allies first, then neutrals
+			%Prioritize Guildmates over shieldmates over factionmates over builder-allies
+			
+			%Calculate total to heal and distribute it over each ally, or heal each subsequent player some percentage of the previous
+	        Send(each_obj,@MsgSendUser,#message_rsc=test_rsc);
+			Send(each_obj,@SomethingShot,#who=who,#target=oFirst,#projectile=self,#flags=viProjectileFlag);
+			% Send(each_obj,@SomethingShot,#who=who,#target=,#projectile=self,#flags=viProjectileFlag);
+	     }
+	  }
+	  
+	  % foreach i in lTargets
+	  % {
+         % Send(i,@MsgSendUser,#message_rsc=vrTestRsc);
+	  % }
+	  
+	  % foreach i in lActive
+	  % {
+         % if 
+         % Send(i,@MsgSendUser,#message_rsc=vrTestRsc2);  
+	  % }
+	  
+	  % foreach each_obj in Send(Send(who,@GetOwner),@GetHolderActive)
+	  % {
+         % if IsClass(each_obj,&User)
+		 % {
+			 % Send(i,@MsgSendUser,#message_rsc=vrTestRsc);
+		 % }
+      % }
+	  
+	  % Show bolt flying through the air.
+      %foreach i in lTargets
+      %{
+      %   Send(oOwner,@SomethingShot,#who=who,#target=i,#projectile=self,
+      %         #flags=viProjectileFlag);
+      %}
+	  
+
+      % Show bolt flying through the air.
+
+%      foreach i in lActive
+%      {
+%         each_obj = Send(oOwner,@HolderExtractObject,#data=i);
+%
+%%         if isClass(each_obj,&Player)
+%%         {
+%%            Send(oOwner,@SomethingShotRadius,#who=who,#projectile=self,
+%%                  #flags=viProjectileFlag,#range=piRange/FINENESS,
+%%                  #number=piNumber,#iLightIntensity=viProjectileLightIntensity,
+%%                  #iLightColor=viProjectileLightColor,#speed=piSpeed);
+%%         }
+%      }
+
+      propagate;
+   }
+
+%%%MIGHT BE ABLE TO USE THIS TO SEND ANIMATIONS BETWEEN TWO OTHER TARGETS%%%
+% DoMissileAttack()
+% {
+% pbFire = TRUE;
+% Send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile=self);
+% Send(self,@TryAttack,#what=poTarget,#stroke_obj=self);
+% return;
+% }
+
+   GetHealAmount(oTarget=$,iSpellPower=1)
+   {
+      if (oTarget = $)
+      {
+         Debug("Trying to get heal amount for $ target!");
+
+         return 1;
+      }
+
+      return 100;
+   }
+
+   
+   %%%%%Projectile Configuration%%%%%
+   GetProjectileSpeed()
+   {
+      if pbDebug = TRUE
+      {
+         return piDebugSpeed;	%Speed based on distance might look nice as well  - Speed 14 loogs good at very long range, and 8 looks better at closer range
+      }
+	  
+      return 12;
+   }
+   
+   GetProjectileLightFlags()
+   {
+	   % General lighting information.
+      if pbDebug = TRUE
+	  {
+         if piLightFlags = 1 {return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;}
+         if piLightFlags = 2 {return LIGHT_FLAG_ON | LIGHT_FLAG_WAVERING;}
+         if piLightFlags = 3 {return LIGHT_FLAG_ON | LIGHT_FLAG_HIGHLIGHT;}
+         if piLightFlags = 4 {return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC | LIGHT_FLAG_WAVERING;}
+         if piLightFlags = 5 {return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC | LIGHT_FLAG_HIGHLIGHT;}
+         if piLightFlags = 6 {return LIGHT_FLAG_ON | LIGHT_FLAG_WAVERING | LIGHT_FLAG_HIGHLIGHT;} %Looks the best (small orb)
+																													%Might be able to generate multiple based on distance to have them chain out
+         if piLightFlags > 6 {return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;}
+	  }
+	  return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;
+   }
+   
+   GetProjectileLightIntensity()
+   {
+      % Medium light radius for projectiles.  Out of 255 levels.
+      return piIntensity;
+   }
+
+   GetProjectileLightColor()
+   {
+      local iColor;
+	  
+      if pbDebug = TRUE
+	  {
+         switch(piDebugColor)
+         {
+            case 1: iColor = LIGHT_BWHITE; break;
+            case 2: iColor = LIGHT_WHITE; break;
+            case 3: iColor = LIGHT_DWHITE; break;
+            case 4: iColor = LIGHT_BYELLOW; break; %Looks the best
+            case 5: iColor = LIGHT_YELLOW; break;
+            case 6: iColor = LIGHT_DYELLOW; break;
+            default : iColor = LIGHT_GREEN; break;
+         }
+      }
+      return iColor;
+   }
+   
+   SendProjectileAnimation()
+   {
+      AddPacket(1, ANIMATE_CYCLE, 4, 40, 2, 2, 2, 3);   % 40ms between animations
+      return;
+   }
+   
+end

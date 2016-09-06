@@ -763,6 +763,17 @@ void AdminTable(int len_command_table,admin_table_type command_table[],int sessi
 		eprintf("AdminTable got invalid SESSION %lu\n",session_id);
 		return;
 	}
+	
+	if (!stricmp(command,"cls") || !stricmp(command,"clear"))
+	{
+		aprintf("\n\n\n\n\n\n\n\n");
+		aprintf("\n\n\n\n\n\n\n\n");
+		aprintf("\n\n\n\n\n\n\n\n");
+		aprintf("\n\n\n\n\n\n\n\n");
+		aprintf("\n\n\n\n\n\n\n\n");
+		return;
+	}
+	
 	if (command == NULL || !stricmp(command,"HELP") || !stricmp(command,"?"))
 	{
 		if (s->state == STATE_MAINTENANCE)

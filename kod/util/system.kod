@@ -3222,6 +3222,7 @@ messages:
       Send(self,@CreateOneSpellIfNew,#num=SID_CURE_DISEASE,#class=&CureDisease);
       Send(self,@CreateOneSpellIfNew,#num=SID_HOSPICE,#class=&Hospice);
       Send(self,@CreateOneSpellIfNew,#num=SID_MAJOR_HEAL,#class=&MajorHeal);
+      Send(self,@CreateOneSpellIfNew,#num=SID_CHAIN_HEAL,#class=&ChainHeal);
       Send(self,@CreateOneSpellIfNew,#num=SID_DISCORDANCE,#class=&Discordance);
       Send(self,@CreateOneSpellIfNew,#num=SID_MARK_OF_DISHONOR,#class=&MarkOfDishonor);
 
