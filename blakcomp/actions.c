@@ -747,6 +747,62 @@ expr_type make_bin_op(expr_type expr1, int op, expr_type expr2)
    return e;
 }
 /************************************************************************/
+expr_type make_isclass_op(expr_type expr1, expr_type expr2)
+{
+   // These are binary ops since they share the same structure:
+   // Take two inputs (object, class ID) and store boolean result
+   // into local or property.
+
+   expr_type e = (expr_type)SafeMalloc(sizeof(expr_struct));
+
+   e->type = E_BINARY_OP;
+   e->value.binary_opval.left_exp = expr1;
+   e->value.binary_opval.right_exp = expr2;
+   e->lineno = lineno;
+
+   // Separate opcode if we can type-check the class at compile time.
+   if (expr2->type == E_CONSTANT)
+   {
+      // Only class constants (literals) allowed.
+      if (expr2->value.constval->type != C_CLASS)
+      {
+         action_error("IsClass call with non-class constant!");
+         return e;
+      }
+      e->value.binary_opval.op = ISCLASS_CONST_OP;
+
+      // Check if we're making a comparison on self that can
+      // be resolved to true.
+      if (expr1->type == E_IDENTIFIER
+         && (expr1->value.idval->type == I_PROPERTY
+            && expr1->value.idval->idnum == 0)
+         && st.curclass == expr2->value.constval->value.numval)
+      {
+         action_error("Found IsClass call always evaluating to true!");
+      }
+   }
+   else if (expr2->type == E_CALL || expr2->type == E_IDENTIFIER)
+   {
+      // These are valid ways of obtaining class ID at runtime.
+      e->value.binary_opval.op = ISCLASS_OP;
+   }
+   else
+   {
+      // Anything else is invalid.
+      action_error("IsClass call must have class literal, identifier or call for class field.");
+   }
+
+   // Check LHS also - must be call or ID.
+   if (expr1->type == E_CONSTANT)
+      action_error("IsClass call cannot use constant for object field.");
+   else if (expr1->type == E_BINARY_OP)
+      action_error("IsClass call cannot use binary op for object field.");
+   else if (expr1->type == E_UNARY_OP)
+      action_error("IsClass call cannot use unary op for object field.");
+
+   return e;
+}
+/************************************************************************/
 expr_type make_un_op(int op, expr_type expr1)
 {
    expr_type e = (expr_type) SafeMalloc(sizeof(expr_struct));
@@ -783,17 +839,18 @@ arg_type make_arg_from_setting(id_type id, expr_type expr)
 /************************************************************************/
 id_type make_constant_id(id_type id, expr_type expr)
 {
-   int numeric_val;
+   int numeric_val = 0;
 
    /* Right hand side must be a number or a negative number */
    switch (expr->type)
    {
    case E_CONSTANT:
    {
-      const_type c = (const_type) expr->value.constval;
+      const_type c = (const_type)expr->value.constval;
       if (c->type == C_NUMBER)
-	 numeric_val = c->value.numval;
-      else action_error("Right hand side must be a numeric constant");
+         numeric_val = c->value.numval;
+      else
+         action_error("Right hand side must be a numeric constant");
       break;
    }
    case E_UNARY_OP:
@@ -801,23 +858,22 @@ id_type make_constant_id(id_type id, expr_type expr)
       const_type c;
       expr_type sub_expr = expr->value.unary_opval.exp;
       int op = expr->value.unary_opval.op;
-      
+
       if (op != NEG_OP || sub_expr->type != E_CONSTANT)
       {
          action_error("Right hand side must be a numeric constant");
          break;
       }
-      
-      c = (const_type) sub_expr->value.constval;
+
+      c = (const_type)sub_expr->value.constval;
       if (c->type == C_NUMBER)
-         numeric_val = - c->value.numval;
+         numeric_val = -c->value.numval;
       else action_error("Right hand side must be a numeric constant");
       break;
    }
    default:
       action_error("Right hand side must be a numeric constant");
    }
-   
 
    lookup_id(id);
 
@@ -826,12 +882,12 @@ id_type make_constant_id(id_type id, expr_type expr)
    {
    case I_UNDEFINED:
       id->ownernum = st.curclass;
-      /* Store value in source field.  This is kind of a hack, but now we can 
-	 insert just the id in st.constants, making it easy to find later. */
+      /* Store value in source field.  This is kind of a hack, but now we can
+         insert just the id in st.constants, making it easy to find later. */
       id->source = numeric_val;
       add_identifier(id, I_CONSTANT);
       break;
-      
+
    default:
       action_error("Duplicate identifier %s", id->name);
       break;
@@ -839,7 +895,7 @@ id_type make_constant_id(id_type id, expr_type expr)
 
    /* Add to list of constants in this class */
    st.constants = list_add_item(st.constants, id);
-   
+
    return id;
 }
 /************************************************************************/
@@ -1312,7 +1368,10 @@ stmt_type make_list_call(list_type l)
    
    s->function = MLIST;
    s->args = NULL;
-   
+
+   // Must store result of call.
+   s->store_required = STORE_REQUIRED;
+
    for ( ; l != NULL; l = l->next)
       s->args = list_add_item(s->args, make_arg_from_expr((expr_type) l->data));
 
@@ -1345,7 +1404,10 @@ stmt_type make_call(id_type function_id, list_type args)
 
    fname = Functions[index].name;
    s->function = Functions[index].opcode;
-      
+
+   // Keep track of whether the function requires a destvar.
+   s->store_required = Functions[index].store_required;
+
    /* Check that types of arguments match "function prototype" in table */
    for ( ; args != NULL; args = args->next)
    {
@@ -1610,7 +1672,7 @@ message_header_type make_message_header(id_type id, list_type args)
    default:            /* Other types indicate name already used */
       action_error("Duplicate identifier %s", id->name);
    }
-
+   s->lineno = lineno;
    s->message_id = id;
    /* Sort parameters in increasing id # order.
       SortParameterList will throw action_error on duplicate parameters. */

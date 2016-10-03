@@ -1,50 +1,50 @@
-% Meridian 59, Copyright 1994-2012 Andrew Kirmse and Chris Kirmse.
-% All rights reserved.
-%
-% This software is distributed under a license that is described in
-% the LICENSE file that accompanies it.
-%
-% Meridian is a registered trademark.
+// Meridian 59, Copyright 1994-2012 Andrew Kirmse and Chris Kirmse.
+// All rights reserved.
+//
+// This software is distributed under a license that is described in
+// the LICENSE file that accompanies it.
+//
+// Meridian is a registered trademark.
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+////////////////////////////////////////////////////////////////////////////////
 OutdoorsKE4 is KCForest
 
-% The new home of the Avar node!  2 ways to get this node:
-%  The good way: Give offerings of food to the statue.  Good node appears.
-%  The evil way: Slaughter enough avars in the village.  Evil node appears.
+// The new home of the Avar node!  2 ways to get this node:
+//  The good way: Give offerings of food to the statue.  Good node appears.
+//  The evil way: Slaughter enough avars in the village.  Evil node appears.
 
 constants:
 
    include blakston.khd
 
-   % This is the absolute value needed before we give the node.
+   // This is the absolute value needed before we give the node.
    NODE_VALUE_NEEDED = 2000
 
-   % The appropriate values for slaughtering Avars.
+   // The appropriate values for slaughtering Avars.
    AVAR_VALUE = -150
    AVAR_CHIEFTAIN_VALUE = -200
    AVAR_SHAMAN_VALUE = -250
 
-   % Time node is around, 30 seconds.
+   // Time node is around, 30 seconds.
    NODE_APPEAR_TIME = 60000
 
-   % Node appear location
+   // Node appear location
    NODE_ROW = 34
    NODE_COL = 52
    NODE_FINE_ROW = 48
    NODE_FINE_COL = 0
 
-   % We use this value when the node has already appeared.
+   // We use this value when the node has already appeared.
    NODE_ALREADY_APPEARED = -100000
 
-   % Offering Acceptance locations
+   // Offering Acceptance locations
    OFFERING_NORTH = 32
    OFFERING_SOUTH = 36
    OFFERING_WEST = 48
    OFFERING_EAST = 53
 
-   % Must be synchronized with avarnode.kod
+   // Must be synchronized with avarnode.kod
    AVARNODE_GOOD = 1
    AVARNODE_EVIL = 2
 
@@ -106,17 +106,20 @@ properties:
 
    piMonster_count_max = 15
 
-   % Used to give cute message for people trying to drown themselves.
+   // Used to give cute message for people trying to drown themselves.
    piCount = 0
 
-   % The new Avar node.
+   // The new Avar node.
    poNode = $
 
-   % This keeps trac of how long the Avar node sticks around.
+   // This keeps track of how long the Avar node sticks around.
    ptNodeDisappear = $
 
-   % This is the tally of the value of the food offered to the idol.
+   // This is the tally of the value of the food offered to the idol.
    piNodeValue = 0
+
+   // Amount of time before the node value resets to 0 after node disappears.
+   piNodeValueResetTime = 120000
 
 messages:
 
@@ -126,7 +129,7 @@ messages:
       plGenerators = [ [13,54], [20,39], [34,39], [44,37], [53,46],
                        [53,56], [46,66], [33,71], [22,67] ];
 
-      % Create the node.
+      // Create the node.
       poNode = Create(&AvarNode,#node_num=NODE_AVAR,#iRoomNum=piRoom_num);
 
       propagate;
@@ -134,7 +137,7 @@ messages:
 
    Delete()
    {
-      % Delete the node.
+      // Delete the node.
       if poNode <> $
       {
          Send(poNode,@Delete);
@@ -167,7 +170,7 @@ messages:
       {
          if IsClass(what,&user)
          {
-            if piCount > 20
+            if piCount++ > 20
             {
                Send(what,@MsgSendUser,#message_rsc=ke4_drown1);
                piCount = 0;
@@ -175,7 +178,6 @@ messages:
             else
             {
                Send(what,@MsgSendUser,#message_rsc=ke4_drown2);
-               piCount = piCount + 1;
             }
          }
       }
@@ -185,7 +187,7 @@ messages:
 
    FirstUserEntered()
    {
-      % Reset the node value.
+      // Reset the node value.
       piNodeValue = 0;
 
       propagate;
@@ -193,7 +195,7 @@ messages:
 
    NewHold(what=$)
    {
-      % Get an offering of food if node isn't currently visible.
+      // Get an offering of food if node isn't currently visible.
       if IsClass(what,&Food)
       {
          Post(self,@OfferingCheck,#what=what);
@@ -228,21 +230,23 @@ messages:
 
    SomethingKilled(what = $,victim = $)
    {
-      % Killing avars is EVIL, mmmkay?
+      local cClass;
+
+      // Killing avars is EVIL, mmmkay?
       if what <> $
          AND IsClass(what,&Player)
       {
-         if IsClass(victim,&Avar)
+         cClass = GetClass(victim);
+
+         if (cClass = &Avar)
          {
             Send(self,@NodeChange,#amount=AVAR_VALUE);
          }
-
-         if IsClass(victim,&AvarChieftain)
+         else if (cClass = &AvarChieftain)
          {
             Send(self,@NodeChange,#amount=AVAR_CHIEFTAIN_VALUE);
          }
-
-         if IsClass(victim,&AvarShaman)
+         else if (cClass = &AvarShaman)
          {
             Send(self,@NodeChange,#amount=AVAR_SHAMAN_VALUE);
          }
@@ -254,15 +258,17 @@ messages:
    NodeChange(amount = 0)
    "Changes the god's favor based on actions in the room."
    {
-      % No change if the node is still around.
+      // No change if the node is still around.
       if piNodeValue = NODE_ALREADY_APPEARED
+         OR (poNode <> $
+            AND Send(poNode,@GetOwner) = self)
       {
          return;
       }
 
-      piNodeValue = piNodeValue + amount;
+      piNodeValue += amount;
 
-      % Did we swing it far enough to be valuable?
+      // Did we swing it far enough to be valuable?
       if piNodeValue >= NODE_VALUE_NEEDED
       {
          Post(self,@SomeoneSaid,#type=SAY_MESSAGE,#what=self,
@@ -270,58 +276,90 @@ messages:
          Send(poNode,@NodeAppear,#karma=AVARNODE_GOOD,#where=self,
                #row=NODE_ROW,#col=NODE_COL,#fine_row=NODE_FINE_ROW,
                #fine_col=NODE_FINE_COL);
-         ptNodeDisappear = CreateTimer(self,@NodeDisappear,NODE_APPEAR_TIME);
-         piNodeValue = NODE_ALREADY_APPEARED;
-
-         return;
+         Send(self,@SetNodeDisappear);
       }
-      else
+      else if piNodeValue <= -NODE_VALUE_NEEDED
       {
-         if piNodeValue <= -NODE_VALUE_NEEDED
-         {
-            Post(self,@SomeoneSaid,#type=SAY_MESSAGE,#what=self,
-                  #string=KE4_evil_final);
-            Send(poNode,@NodeAppear,#karma=AVARNODE_EVIL,#where=self,
-                  #row=NODE_ROW,#col=NODE_COL,#fine_row=NODE_FINE_ROW,
-                  #fine_col=NODE_FINE_COL);
-            ptNodeDisappear = CreateTimer(self,@NodeDisappear,
-                                          NODE_APPEAR_TIME);
-            piNodeValue = NODE_ALREADY_APPEARED;
-
-            return;
-         }
+         Post(self,@SomeoneSaid,#type=SAY_MESSAGE,#what=self,
+               #string=KE4_evil_final);
+         Send(poNode,@NodeAppear,#karma=AVARNODE_EVIL,#where=self,
+               #row=NODE_ROW,#col=NODE_COL,#fine_row=NODE_FINE_ROW,
+               #fine_col=NODE_FINE_COL);
+         Send(self,@SetNodeDisappear);
       }
-
-      if amount > 0
+      else if amount > 0
       {
-         % Always give the good message.
+         // Always give the good message.
          Send(self,@Rumble);
          Post(self,@SomeoneSaid,#type=SAY_MESSAGE,#what=self,#string=KE4_good);
       }
-      else
+      else if amount < 0
+         AND (piNodeValue > 0
+            OR piNodeValue < -(NODE_VALUE_NEEDED/4))
       {
-         % Only post the evil message if they're onto something.
-         % Disrupting good or killed enough to be blatantly evil.
-         if amount < 0
-            AND (piNodeValue > 0
-               OR piNodeValue < -(NODE_VALUE_NEEDED/4))
-         {
-            Send(self,@Rumble);
-            Post(self,@SomeoneSaid,#type=SAY_MESSAGE,#what=self,
-                  #string=KE4_evil);
-         }
+         // Only post the evil message if they're onto something.
+         // Disrupting good or killed enough to be blatantly evil.
+         Send(self,@Rumble);
+         Post(self,@SomeoneSaid,#type=SAY_MESSAGE,#what=self,#string=KE4_evil);
       }
 
       return;
    }
 
-   NodeDisappear()
+   SetNodeDisappear()
+   "Sets the timer for removing the node, sets 'appeared' node value."
    {
+      if (ptNodeDisappear <> $)
+      {
+         DeleteTimer(ptNodeDisappear);
+      }
+
+      ptNodeDisappear = CreateTimer(self,@NodeDisappear,NODE_APPEAR_TIME);
+      piNodeValue = NODE_ALREADY_APPEARED;
+
+      return;
+   }
+
+   NodeDisappear(timer = $)
+   {
+      if (ptNodeDisappear <> timer)
+      {
+         DeleteTimer(ptNodeDisappear);
+      }
       ptNodeDisappear = $;
+
       Send(poNode,@NodeDisappear);
+
+      // Trigger a reset after the given reset time.
+      ptNodeDisappear = CreateTimer(self,@NodeValueReset,piNodeValueResetTime);
+
+      return;
+   }
+
+   NodeValueReset(timer = $)
+   {
+      if (ptNodeDisappear <> timer)
+      {
+         DeleteTimer(ptNodeDisappear);
+      }
+
+      ptNodeDisappear = $;
+
+      // Sanity check on the node since we might have deleted the timer.
+      if (poNode <> $
+         AND Send(poNode,@GetOwner) = self)
+      {
+         Send(poNode,@NodeDisappear);
+      }
+
+      // Reset node value only if it's set to NODE_ALREADY_APPEARED.
+      if (piNodeValue = NODE_ALREADY_APPEARED)
+      {
+         piNodeValue = 0;
+      }
 
       return;
    }
 
 end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+////////////////////////////////////////////////////////////////////////////////

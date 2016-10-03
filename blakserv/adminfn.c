@@ -154,6 +154,8 @@ void AdminShowSuspended(int session_id, admin_parm_type parms[],
 void AdminShowSysTimers(int session_id,admin_parm_type parms[],
                         int num_blak_parm,parm_node blak_parm[]);
 void AdminShowEachSysTimer(systimer_node *st);
+void AdminShowOpcodes(int session_id, admin_parm_type parms[],
+                      int num_blak_parm, parm_node blak_parm[]);
 void AdminShowCalls(int session_id,admin_parm_type parms[],
                     int num_blak_parm,parm_node blak_parm[]);
 void AdminShowMessage(int session_id,admin_parm_type parms[],
@@ -351,6 +353,7 @@ admin_table_type admin_show_table[] =
 	{ AdminShowName,          {R,N}, F, A|M, NULL, 0, "name",          "Show object of user name" },
 	{ AdminShowNameIDs,       {N},   F, A|M, NULL, 0, "nameids",       "Show all name ids (message/parms)" },
 	{ AdminShowObject,        {I,N}, F, A|M, NULL, 0, "object",        "Show one object by id" },
+	//{ AdminShowOpcodes,       {N},   F, A|M, NULL, 0, "opcodes",       "Show opcode count" },
 	{ AdminShowPackages,      {N},   F,A, NULL, 0, "packages",         "Show all packages loaded" },
 	{ AdminShowProtocol,      {N},   F, A|M, NULL, 0, "protocol",      "Show protocol message counts" },
 	{ AdminShowReferences,    {S,S,N}, F, A|M, NULL, 0, "references",  "Show what objects or lists reference a particular data value" },
@@ -897,6 +900,11 @@ void AdminTable(int len_command_table,admin_table_type command_table[],int sessi
 		i = 0;
 		while ((parm_str = strtok(NULL," \t\n")) != NULL)
 		{
+			if (i >= MAX_ADMIN_BLAK_PARM)
+			{
+				aprintf("Too many parameters, command ignored.\n");
+				return;
+			}
 			blak_parm[i].type = CONSTANT;
 			blak_parm[i].name_id = GetIDByName(parm_str);
 			if (blak_parm[i].name_id == INVALID_ID)
@@ -2306,6 +2314,29 @@ void AdminShowEachSysTimer(systimer_node *st)
 	aprintf("\n");
 }
 
+void AdminShowOpcodes(int session_id, admin_parm_type parms[],
+                      int num_blak_parm, parm_node blak_parm[])
+{
+#if 0
+   kod_statistics *kstat;
+   kstat = GetKodStats();
+   UINT64 total_opcodes = 0;
+   int unused_opcodes = 0;
+
+   for (int i = 0; i < NUMBER_OF_OPCODES; ++i)
+   {
+      if (!kstat->opcode_count[i])
+         ++unused_opcodes;
+      total_opcodes += kstat->opcode_count[i];
+      aprintf("Opcode: %i, count: %llu\n", i, kstat->opcode_count[i]);
+   }
+   aprintf("\nUnused opcodes: %i\n", unused_opcodes);
+   aprintf("Total instructions: %llu\n", total_opcodes);
+#else
+   aprintf("Opcode printing disabled.\n");
+#endif
+}
+
 void AdminShowCalls(int session_id,admin_parm_type parms[],
                     int num_blak_parm,parm_node blak_parm[])                    
 {
@@ -2341,7 +2372,6 @@ void AdminShowCalls(int session_id,admin_parm_type parms[],
 		switch (max_index)
 		{
 		case CREATEOBJECT : strcpy(c_name, "CreateObject"); break;
-		case ISCLASS : strcpy(c_name, "IsClass"); break;
 		case GETCLASS : strcpy(c_name, "GetClass"); break;
 		case SENDMESSAGE : strcpy(c_name, "Send"); break;
 		case POSTMESSAGE : strcpy(c_name, "Post"); break;

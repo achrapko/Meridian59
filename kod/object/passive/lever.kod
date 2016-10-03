@@ -1,13 +1,13 @@
-% Meridian 59, Copyright 1994-2012 Andrew Kirmse and Chris Kirmse.
-% All rights reserved.
-%
-% This software is distributed under a license that is described in
-% the LICENSE file that accompanies it.
-%
-% Meridian is a registered trademark.
+// Meridian 59, Copyright 1994-2012 Andrew Kirmse and Chris Kirmse.
+// All rights reserved.
+//
+// This software is distributed under a license that is described in
+// the LICENSE file that accompanies it.
+//
+// Meridian is a registered trademark.
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+////////////////////////////////////////////////////////////////////////////////
 Lever is PassiveObject
 
 constants:
@@ -76,8 +76,7 @@ messages:
       }
 
       if (pbPKillOnly
-         AND (NOT Send(who,@CheckPlayerFlag,#flag=PFLAG_PKILL_ENABLE)
-            OR Send(who,@CheckPlayerFlag,#flag=PFLAG_TEMPSAFE)))
+         AND (NOT Send(who,@CanPlayerPvP)))
       {
          Send(who,@MsgSendUser,#message_rsc=lever_not_experienced);
 
@@ -86,7 +85,7 @@ messages:
 
       if pbBlueNameProtected
          AND (NOT IsClass(who,&Admin))
-            AND (NOT send(who,@CanAdvance))
+            AND (NOT Send(who,@CanAdvance))
       {
          Send(who,@DontInterfere);
 
@@ -146,4 +145,4 @@ messages:
    }
 
 end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+////////////////////////////////////////////////////////////////////////////////

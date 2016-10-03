@@ -158,14 +158,13 @@ void codegen_filename(char *filename)
  *   maxlocal is highest # local variable used so far in this message handler.
  *   Returns highest # local variable used in code for call.
  */
-int codegen_call(call_stmt_type c, id_type destvar, int maxlocal)
+int codegen_call(call_stmt_type c, id_type destvar, int linenumber, int maxlocal)
 {
    /* our_maxlocal gives highest #ed temporary needed to evaluate the
     * entire call.  maxtemps is the highest temp needed for a single arg. */
-   int our_maxlocal = maxlocal, maxtemps, normal_args = 0;
+   int our_maxlocal = maxlocal, maxtemps, normal_args = 0, num_settings;
    int argnum;
    list_type p;
-   opcode_type opcode;
    arg_type arg;
    expr_type expr;
    id_type id;
@@ -173,100 +172,118 @@ int codegen_call(call_stmt_type c, id_type destvar, int maxlocal)
    /* If an argument is complicated, we have to store it in a temporary */
    for (p = c->args; p != NULL; p = p->next)
    {
-      arg = (arg_type) p->data;
+      arg = (arg_type)p->data;
 
       /* Get expression and place it in a temp if necessary */
       if (arg->type == ARG_EXPR)
-	 expr = arg->value.expr_val;
+         expr = arg->value.expr_val;
       else expr = arg->value.setting_val->expr;
 
       maxtemps = simplify_expr(expr, maxlocal);
       /* If we need to use a temporary, then this temp must stay untouched until
        * the call is made.  So we must increment maxlocal in the case. */
       if (maxtemps > maxlocal)
-	 maxlocal++;
+         maxlocal++;
       if (maxtemps > our_maxlocal)
-	 our_maxlocal = maxtemps;
+         our_maxlocal = maxtemps;
    }
 
    /* Build up call instruction */
-   memset(&opcode, 0, sizeof(opcode));  /* Set opcode to all zeros */
-   opcode.command = CALL;
 
-   /* Set source1 field to place for return value */
+   /* Output the call opcode */
    if (destvar == NULL)
-      opcode.source1 = CALL_NO_ASSIGN;
+   {
+      // Check if this function is allowed to discard the return value.
+      // Warn but don't halt codegen.
+      if (c->store_required == STORE_REQUIRED)
+         codegen_warning(linenumber, "Function call %s discarding required return value",
+            get_function_name_by_opcode(c->function));
+      OutputByte(outfile, (BYTE)OP_CALL_STORE_NONE);
+   }
    else
+   {
       switch (destvar->type)
       {
       case I_LOCAL:
-	 opcode.source1 = CALL_ASSIGN_LOCAL_VAR;
-	 break;
+         OutputByte(outfile, (BYTE)OP_CALL_STORE_L);
+         break;
 
       case I_PROPERTY:
-	 opcode.source1 = CALL_ASSIGN_PROPERTY;
-	 break;
+         OutputByte(outfile, (BYTE)OP_CALL_STORE_P);
+         break;
 
       default:
-	 codegen_error("Identifier in expression not a local or property: %s", 
-		       destvar->name);
+         codegen_error("Identifier in expression not a local or property: %s",
+            destvar->name);
       }
-
-   OutputOpcode(outfile, opcode);
+   }
 
    /* Function # to call */
-   OutputByte(outfile,  (BYTE) c->function);
+   OutputByte(outfile, (BYTE)c->function);
 
    /* Place to store result, if any */
-   if (opcode.source1 != CALL_NO_ASSIGN)
+   if (destvar != NULL)
       OutputInt(outfile, destvar->idnum);
 
    /* Count # of "normal" arguments, i.e. all those
     * except for settings. */
    for (p = c->args; p != NULL; p = p->next)
-      if ( ((arg_type) (p->data))->type != ARG_SETTING)
-	 normal_args++;
+      if (((arg_type)(p->data))->type != ARG_SETTING)
+         normal_args++;
+
+   // Error if too many normal params in a call.
+   if (normal_args > MAX_C_PARMS)
+      codegen_error("Call %s has too many arguments, found %i when max is %i.",
+         get_function_name_by_opcode(c->function), normal_args, MAX_C_PARMS);
 
    /* # of "normal" parameters */
-   OutputByte(outfile,  (BYTE) normal_args);
+   OutputByte(outfile, (BYTE)normal_args);
 
    /* First have to generate code for "normal" parameters */
    for (p = c->args, argnum = 0; p != NULL; p = p->next, argnum++)
    {
-      arg = (arg_type) p->data;
+      arg = (arg_type)p->data;
 
       switch (arg->type)
       {
       case ARG_EXPR:
-	 /* Expression was reduced to simple form above */
-	 OutputBaseExpression(outfile, arg->value.expr_val);
-	 break;
+         /* Expression was reduced to simple form above */
+         OutputBaseExpression(outfile, arg->value.expr_val);
+         break;
 
       case ARG_SETTING:
-	 /* Settings are handled below */
-	 break;
+         /* Settings are handled below */
+         break;
 
       default:
-	 codegen_error("Unknown argument type (%d) in argument %d", arg->type, argnum);	 
-	 break;
+         codegen_error("Unknown argument type (%d) in argument %d", arg->type, argnum);
+         break;
       }
    }
 
    /* # of settings */
-   OutputByte(outfile,  (BYTE) (list_length(c->args) - normal_args));
+   num_settings = list_length(c->args) - normal_args;
+
+   // Error if too many settings in a call.
+   if (normal_args > MAX_NAME_PARMS)
+      codegen_error("Call %s has too many settings, found %i when max is %i.",
+         get_function_name_by_opcode(c->function), num_settings, MAX_NAME_PARMS);
+
+   // Output # of settings.
+   OutputByte(outfile, (BYTE)(num_settings));
 
    /* Now take care of settings */
    for (p = c->args; p != NULL; p = p->next)
    {
-      arg = (arg_type) p->data;
+      arg = (arg_type)p->data;
 
       if (arg->type == ARG_SETTING)
       {
-	 id = arg->value.setting_val->id;
-	 /* Write out parameter #, then rhs of assignment */
-	 OutputInt(outfile, id->idnum);
+         id = arg->value.setting_val->id;
+         /* Write out parameter #, then rhs of assignment */
+         OutputInt(outfile, id->idnum);
 
-	 OutputBaseExpression(outfile, arg->value.setting_val->expr);
+         OutputBaseExpression(outfile, arg->value.setting_val->expr);
       }
    }
    return our_maxlocal;
@@ -280,19 +297,20 @@ int codegen_call(call_stmt_type c, id_type destvar, int maxlocal)
  */
 int codegen_return(expr_type expr, int maxlocal)
 {
-   opcode_type opcode;
+   opcode_data opcode;
    int our_maxlocal = maxlocal, sourceval;
 
    /* If expression is complicated, place in temp variable first */
    our_maxlocal = simplify_expr(expr, maxlocal);
 
    memset(&opcode, 0, sizeof(opcode));  /* Set opcode to all zeros */
-   opcode.command = RETURN;
+   OutputByte(outfile, (BYTE)OP_RETURN);
+
    sourceval = set_source_id(&opcode, SOURCE1, expr);
-   opcode.dest = NO_PROPAGATE;
+   opcode.source2 = NO_PROPAGATE;
 
    OutputOpcode(outfile, opcode);
-   
+
    /* Write out return value (whether a constant or a variable) */
    OutputInt(outfile, sourceval);
    return our_maxlocal;
@@ -305,7 +323,7 @@ int codegen_return(expr_type expr, int maxlocal)
  */
 int codegen_if(if_stmt_type s, int numlocals)
 {
-   opcode_type opcode;
+   opcode_data opcode;
    int our_maxlocal = numlocals, numtemps, sourceval;
    long gotopos, thenpos;
    list_type p;
@@ -315,15 +333,12 @@ int codegen_if(if_stmt_type s, int numlocals)
 
    /* Jump over then clause if condition is false */
    memset(&opcode, 0, sizeof(opcode));  /* Set opcode to all zeros */
-   opcode.command = GOTO;
-   opcode.dest = GOTO_IF_FALSE;
    sourceval = set_source_id(&opcode, SOURCE1, s->condition);
-   OutputOpcode(outfile, opcode);
 
+   OutputGotoOpcode(outfile, GOTO_IF_FALSE, opcode.source1);
    /* Leave space for destination address */
    gotopos = FileCurPos(outfile);
    OutputInt(outfile, 0);
-
    OutputInt(outfile, sourceval);
 
    /* Write code for then clause */
@@ -337,30 +352,26 @@ int codegen_if(if_stmt_type s, int numlocals)
    /* If there is an else clause, jump over it */
    if (s->else_clause != NULL || s->elseif_clause != NULL)
    {
-      opcode.source1 = 0;
-      opcode.source2 = GOTO_UNCONDITIONAL;
-      opcode.dest = 0;
-      OutputOpcode(outfile, opcode);
-
+      OutputGotoOpcode(outfile, GOTO_UNCONDITIONAL, 0);
       /* Leave space for destination address */
       thenpos = FileCurPos(outfile);
       OutputInt(outfile, 0);
    }
 
    /* Go back and fill in destination address for conditional goto */
-   BackpatchGoto(outfile, gotopos, FileCurPos(outfile));
+   BackpatchGotoConditional(outfile, gotopos, FileCurPos(outfile));
 
    /* If there's an else clause, write out its code */
    if (s->else_clause != NULL)
    {
       for (p = s->else_clause; p != NULL; p = p->next)
       {
-	 numtemps = codegen_statement((stmt_type) p->data, numlocals);
-	 if (numtemps > our_maxlocal)
-	    our_maxlocal = numtemps;
+         numtemps = codegen_statement((stmt_type)p->data, numlocals);
+         if (numtemps > our_maxlocal)
+            our_maxlocal = numtemps;
       }
       /* Go back and fill in destination address for end of then clause */
-      BackpatchGoto(outfile, thenpos, FileCurPos(outfile));
+      BackpatchGotoUnconditional(outfile, thenpos, FileCurPos(outfile));
    }
    else if (s->elseif_clause != NULL)
    {
@@ -369,7 +380,7 @@ int codegen_if(if_stmt_type s, int numlocals)
       numtemps = codegen_if(elseif->value.if_stmt_val, numlocals);
       if (numtemps > our_maxlocal)
          our_maxlocal = numtemps;
-      BackpatchGoto(outfile, thenpos, FileCurPos(outfile));
+      BackpatchGotoUnconditional(outfile, thenpos, FileCurPos(outfile));
    }
    return our_maxlocal;
 }
@@ -381,7 +392,7 @@ int codegen_if(if_stmt_type s, int numlocals)
  */
 int codegen_switch(switch_stmt_type s, int numlocals)
 {
-   opcode_type opcode;
+   opcode_data opcode;
    int our_maxlocal = numlocals, numtemps, sourceval;
    long toppos, endpos, casepos[1024], defaultpos; // Keep track of file positions.
    list_type case_list, case_list2; // List of cases for the switch.
@@ -492,10 +503,8 @@ int codegen_switch(switch_stmt_type s, int numlocals)
 
       /* Jump to clause if condition is true */
       memset(&opcode, 0, sizeof(opcode));
-      opcode.command = GOTO;
-      opcode.dest = GOTO_IF_TRUE;
       sourceval = set_source_id(&opcode, SOURCE1, temp_expr);
-      OutputOpcode(outfile, opcode);
+      OutputGotoOpcode(outfile, GOTO_IF_TRUE, opcode.source1);
 
       /* Leave space for destination address */
       casepos[numCase] = FileCurPos(outfile);
@@ -507,10 +516,7 @@ int codegen_switch(switch_stmt_type s, int numlocals)
    // Put the goto statement for the default case last.
    if (default_stmt)
    {
-      opcode.source1 = 0;
-      opcode.source2 = GOTO_UNCONDITIONAL;
-      opcode.dest = 0;
-      OutputOpcode(outfile, opcode);
+      OutputGotoOpcode(outfile, GOTO_UNCONDITIONAL, 0);
       /* Leave space for destination address */
       defaultpos = FileCurPos(outfile);
       OutputInt(outfile, 0);
@@ -518,10 +524,7 @@ int codegen_switch(switch_stmt_type s, int numlocals)
    else
    {
       // No default case, goto end of switch.
-      opcode.source1 = 0;
-      opcode.source2 = GOTO_UNCONDITIONAL;
-      opcode.dest = 0;
-      OutputOpcode(outfile, opcode);
+      OutputGotoOpcode(outfile, GOTO_UNCONDITIONAL, 0);
       /* Leave space for destination address */
       endpos = FileCurPos(outfile);
       OutputInt(outfile, 0);
@@ -540,11 +543,11 @@ int codegen_switch(switch_stmt_type s, int numlocals)
       // Default case location is at defaultpos.
       if (case_stmt->type == S_DEFAULTCASE)
       {
-         BackpatchGoto(outfile, defaultpos, FileCurPos(outfile));
+         BackpatchGotoUnconditional(outfile, defaultpos, FileCurPos(outfile));
       }
       else
       {
-         BackpatchGoto(outfile, casepos[numCase], FileCurPos(outfile));
+         BackpatchGotoConditional(outfile, casepos[numCase], FileCurPos(outfile));
          numCase++;
       }
       // Write code for statements.
@@ -558,11 +561,11 @@ int codegen_switch(switch_stmt_type s, int numlocals)
 
    /* Backpatch continue statements in loop body */
    for (p = current_loop->for_continue_list; p != NULL; p = p->next)
-      BackpatchGoto(outfile, (int)p->data, FileCurPos(outfile));
+      BackpatchGotoUnconditional(outfile, (int)p->data, FileCurPos(outfile));
 
-   /* Go back and fill in destination address for conditional goto */
+   /* Go back and fill in destination address for unconditional goto */
    if (!default_stmt)
-      BackpatchGoto(outfile, endpos, FileCurPos(outfile));
+      BackpatchGotoUnconditional(outfile, endpos, FileCurPos(outfile));
 
    codegen_exit_loop();
 
@@ -583,6 +586,7 @@ void codegen_enter_loop(void)
    loop_info->toppos = FileCurPos(outfile);
    loop_info->break_list = NULL;
    loop_info->for_continue_list = NULL;
+   loop_info->conditional_goto_list = NULL;
    current_loop = loop_info;
    
    /* Add new loop to front of list */
@@ -600,7 +604,11 @@ void codegen_exit_loop(void)
 
    /* Backpatch break statements to jump to end of loop */
    for (p = current_loop->break_list; p != NULL; p = p->next)
-      BackpatchGoto(outfile,  (int) p->data, FileCurPos(outfile));
+      BackpatchGotoUnconditional(outfile, (int) p->data, FileCurPos(outfile));
+
+   /* Backpatch conditional goto statements to jump to end of loop */
+   for (p = current_loop->conditional_goto_list; p != NULL; p = p->next)
+      BackpatchGotoConditional(outfile, (int)p->data, FileCurPos(outfile));
 
    /* Remove current list from loop "stack" */
    loop_stack = list_delete_first(loop_stack);
@@ -616,7 +624,7 @@ void codegen_exit_loop(void)
  */
 int codegen_while(while_stmt_type s, int numlocals)
 {
-   opcode_type opcode;
+   opcode_data opcode;
    int our_maxlocal = numlocals, numtemps, sourceval;
    long toppos;
    list_type p;
@@ -629,14 +637,12 @@ int codegen_while(while_stmt_type s, int numlocals)
 
    /* Jump over body if condition is false */
    memset(&opcode, 0, sizeof(opcode));  /* Set opcode to all zeros */
-   opcode.command = GOTO;
-   opcode.dest = GOTO_IF_FALSE;
    sourceval = set_source_id(&opcode, SOURCE1, s->condition);
-   OutputOpcode(outfile, opcode);
+   OutputGotoOpcode(outfile, GOTO_IF_FALSE, opcode.source1);
 
-   /* Make believe goto is a break statement & leave space for backpatching */
-   current_loop->break_list = 
-      list_add_item(current_loop->break_list, (void *) FileCurPos(outfile));
+   /* Conditional jump to end of loop */
+   current_loop->conditional_goto_list =
+      list_add_item(current_loop->conditional_goto_list, (void *)FileCurPos(outfile));
    OutputInt(outfile, 0);
    OutputInt(outfile, sourceval);
 
@@ -649,10 +655,7 @@ int codegen_while(while_stmt_type s, int numlocals)
    }
 
    /* Goto top of loop is last statement of while loop */
-   opcode.source1 = 0;
-   opcode.source2 = GOTO_UNCONDITIONAL;
-   opcode.dest = 0;
-   OutputOpcode(outfile, opcode);
+   OutputGotoOpcode(outfile, GOTO_UNCONDITIONAL, 0);
    OutputGotoOffset(outfile, FileCurPos(outfile), toppos);
 
    codegen_exit_loop();  /* Takes care of break statements */
@@ -667,7 +670,7 @@ int codegen_while(while_stmt_type s, int numlocals)
  */
 int codegen_dowhile(while_stmt_type s, int numlocals)
 {
-   opcode_type opcode;
+   opcode_data opcode;
    int our_maxlocal = numlocals, numtemps, sourceval;
    long toppos;
    list_type p;
@@ -685,29 +688,24 @@ int codegen_dowhile(while_stmt_type s, int numlocals)
    
    /* Backpatch continue statements in loop body */
    for (p = current_loop->for_continue_list; p != NULL; p = p->next)
-      BackpatchGoto(outfile, (int)p->data, FileCurPos(outfile));
+      BackpatchGotoUnconditional(outfile, (int)p->data, FileCurPos(outfile));
 
    /* First generate code for condition */
    our_maxlocal = simplify_expr(s->condition, numlocals);
 
    /* Jump over body if condition is false */
    memset(&opcode, 0, sizeof(opcode));  /* Set opcode to all zeros */
-   opcode.command = GOTO;
-   opcode.dest = GOTO_IF_FALSE;
    sourceval = set_source_id(&opcode, SOURCE1, s->condition);
-   OutputOpcode(outfile, opcode);
+   OutputGotoOpcode(outfile, GOTO_IF_FALSE, opcode.source1);
 
-   /* Make believe goto is a break statement & leave space for backpatching */
-   current_loop->break_list =
-      list_add_item(current_loop->break_list, (void *)FileCurPos(outfile));
+   /* Conditional jump to end of loop */
+   current_loop->conditional_goto_list =
+      list_add_item(current_loop->conditional_goto_list, (void *)FileCurPos(outfile));
    OutputInt(outfile, 0);
    OutputInt(outfile, sourceval);
 
    /* Goto top of loop is last statement of while loop */
-   opcode.source1 = 0;
-   opcode.source2 = GOTO_UNCONDITIONAL;
-   opcode.dest = 0;
-   OutputOpcode(outfile, opcode);
+   OutputGotoOpcode(outfile, GOTO_UNCONDITIONAL, 0);
    OutputGotoOffset(outfile, FileCurPos(outfile), toppos);
 
    codegen_exit_loop();  /* Takes care of break statements */
@@ -726,7 +724,7 @@ int codegen_dowhile(while_stmt_type s, int numlocals)
 */
 int codegen_for(for_stmt_type s, int numlocals)
 {
-   opcode_type opcode;
+   opcode_data opcode;
    int our_maxlocal = numlocals, numtemps = 0, sourceval;
    long toppos;
    list_type p;
@@ -752,14 +750,12 @@ int codegen_for(for_stmt_type s, int numlocals)
 
    /* Jump over body if condition is false */
    memset(&opcode, 0, sizeof(opcode));  /* Set opcode to all zeros */
-   opcode.command = GOTO;
-   opcode.dest = GOTO_IF_FALSE;
    sourceval = set_source_id(&opcode, SOURCE1, s->condition);
-   OutputOpcode(outfile, opcode);
+   OutputGotoOpcode(outfile, GOTO_IF_FALSE, opcode.source1);
 
-   /* Make believe goto is a break statement & leave space for backpatching */
-   current_loop->break_list =
-      list_add_item(current_loop->break_list, (void *)FileCurPos(outfile));
+   /* Conditional jump to end of loop */
+   current_loop->conditional_goto_list =
+      list_add_item(current_loop->conditional_goto_list, (void *)FileCurPos(outfile));
    OutputInt(outfile, 0);
    OutputInt(outfile, sourceval);
 
@@ -774,7 +770,7 @@ int codegen_for(for_stmt_type s, int numlocals)
 
    /* Backpatch continue statements in loop body */
    for (p = current_loop->for_continue_list; p != NULL; p = p->next)
-      BackpatchGoto(outfile, (int)p->data, FileCurPos(outfile));
+      BackpatchGotoUnconditional(outfile, (int)p->data, FileCurPos(outfile));
 
    /* Step 4: Execute statements from assign list (iterators) */
    /* If no iteration, list will be NULL. */
@@ -787,10 +783,7 @@ int codegen_for(for_stmt_type s, int numlocals)
    }
 
    /* Goto top of loop is last statement of for loop */
-   opcode.source1 = 0;
-   opcode.source2 = GOTO_UNCONDITIONAL;
-   opcode.dest = 0;
-   OutputOpcode(outfile, opcode);
+   OutputGotoOpcode(outfile, GOTO_UNCONDITIONAL, 0);
    OutputGotoOffset(outfile, FileCurPos(outfile), toppos);
 
    codegen_exit_loop();  /* Takes care of break statements */
@@ -815,7 +808,6 @@ int codegen_for(for_stmt_type s, int numlocals)
  */
 int codegen_foreach(foreach_stmt_type s, int numlocals)
 {
-   opcode_type opcode;
    int our_maxlocal, numtemps;
    stmt_type temp_stmt = (stmt_type) SafeMalloc(sizeof(stmt_struct));
    expr_type temp_expr = (expr_type) SafeMalloc(sizeof(expr_struct));
@@ -868,15 +860,11 @@ int codegen_foreach(foreach_stmt_type s, int numlocals)
    codegen_statement(temp_stmt, numlocals);  /* Won't require more temps */
    
    /* Now perform jump if temp = $ is true */
-   memset(&opcode, 0, sizeof(opcode));  /* Set opcode to all zeros */
-   opcode.command = GOTO;
-   opcode.source1 = LOCAL_VAR;
-   opcode.dest = GOTO_IF_TRUE;
-   OutputOpcode(outfile, opcode);
+   OutputGotoOpcode(outfile, GOTO_IF_TRUE, LOCAL_VAR);
 
-   /* Make believe goto is a break statement & leave space for backpatching */
-   current_loop->break_list = 
-      list_add_item(current_loop->break_list, (void *) FileCurPos(outfile));
+   /* Conditional jump to end of loop */
+   current_loop->conditional_goto_list =
+      list_add_item(current_loop->conditional_goto_list, (void *)FileCurPos(outfile));
    OutputInt(outfile, 0);
    OutputInt(outfile, temp2_id->idnum);   /* Jump if temp2 = TRUE */ 
 
@@ -885,9 +873,10 @@ int codegen_foreach(foreach_stmt_type s, int numlocals)
    temp_expr->value.idval = temp_id;
    arg->type = ARG_EXPR;
    arg->value.expr_val = temp_expr;
+   call_stmt->store_required = STORE_REQUIRED;
    call_stmt->function = FIRST;
    call_stmt->args = list_create(arg);
-   codegen_call(call_stmt, s->id, numlocals);  /* Won't require more temps */
+   codegen_call(call_stmt, s->id, s->condition->lineno, numlocals);  /* Won't require more temps */
 
    /* Write code for loop body */
    for (p = s->body; p != NULL; p = p->next)
@@ -899,18 +888,15 @@ int codegen_foreach(foreach_stmt_type s, int numlocals)
 
    /* Backpatch continue statements in loop body */
    for (p = current_loop->for_continue_list; p != NULL; p = p->next)
-      BackpatchGoto(outfile,  (int) p->data, FileCurPos(outfile));
+      BackpatchGotoUnconditional(outfile,  (int) p->data, FileCurPos(outfile));
 
    /**** Statement #4:    temp = Rest(temp) ****/
    /* Can reuse most of statement #3 above */
    call_stmt->function = REST;
-   codegen_call(call_stmt, temp_id, numlocals);  /* Won't require more temps */
+   codegen_call(call_stmt, temp_id, s->condition->lineno, numlocals);  /* Won't require more temps */
 
    /**** Statement #5:    goto top ****/
-   opcode.source1 = 0;
-   opcode.source2 = GOTO_UNCONDITIONAL;
-   opcode.dest = 0;
-   OutputOpcode(outfile, opcode);
+   OutputGotoOpcode(outfile, GOTO_UNCONDITIONAL, 0);
    OutputGotoOffset(outfile, FileCurPos(outfile), toppos);
 
    codegen_exit_loop();  /* Takes care of break statements */
@@ -925,7 +911,7 @@ int codegen_foreach(foreach_stmt_type s, int numlocals)
  */
 int codegen_statement(stmt_type s, int numlocals)
 {
-   opcode_type opcode;
+   opcode_data opcode;
    int our_maxtemp = numlocals; /* highest numbered temporary required for this statement alone */
 
    /* Save line # debugging information */
@@ -950,12 +936,12 @@ int codegen_statement(stmt_type s, int numlocals)
    }
 
    case S_CALL:
-      our_maxtemp = codegen_call(s->value.call_stmt_val, NULL, numlocals);
+      our_maxtemp = codegen_call(s->value.call_stmt_val, NULL, s->lineno, numlocals);
       break;
 
    case S_PROP:
-      opcode.command = RETURN;
-      opcode.dest = PROPAGATE;
+      OutputByte(outfile, (BYTE)OP_RETURN);
+      opcode.source2 = PROPAGATE;
       OutputOpcode(outfile, opcode);
       break;
 
@@ -989,23 +975,17 @@ int codegen_statement(stmt_type s, int numlocals)
 
    case S_BREAK:
       /* Goto end of loop */
-      opcode.command = GOTO;
-      opcode.source1 = 0;
-      opcode.source2 = GOTO_UNCONDITIONAL;
-      OutputOpcode(outfile, opcode);
+      OutputGotoOpcode(outfile, GOTO_UNCONDITIONAL, 0);
       
       /* Add to list of gotos to be backpatched later, and leave space */
       current_loop->break_list = 
-	 list_add_item(current_loop->break_list, (void *) FileCurPos(outfile));
+         list_add_item(current_loop->break_list, (void *) FileCurPos(outfile));
       OutputInt(outfile, 0);
       break;
 
    case S_CONTINUE:
       /* Goto top of loop */
-      opcode.command = GOTO;
-      opcode.source1 = 0;
-      opcode.source2 = GOTO_UNCONDITIONAL;
-      OutputOpcode(outfile, opcode);
+      OutputGotoOpcode(outfile, GOTO_UNCONDITIONAL, 0);
 
       /* In for loops, continue statements actually jump forward, but in while loops
        * they jump backward.  Save address of goto for backpatching; if we are
@@ -1013,7 +993,7 @@ int codegen_statement(stmt_type s, int numlocals)
        * backpatching in codegen_foreach().
        */
       current_loop->for_continue_list = 
-	 list_add_item(current_loop->for_continue_list, (void *) FileCurPos(outfile));
+         list_add_item(current_loop->for_continue_list, (void *) FileCurPos(outfile));
 
       OutputGotoOffset(outfile, FileCurPos(outfile), current_loop->toppos);
       break;
@@ -1066,20 +1046,26 @@ void codegen_property(property_type p)
  */
 void codegen_message(message_handler_type m)
 {
-   int numlocals, maxtemp, maxlocals;
+   int numlocals, maxtemp, maxlocals, numparams;
    list_type s, p = m->header->params;
    long localpos;
 
    /* Leave space for # of local variables */
-   localpos = FileCurPos(outfile); 
+   localpos = FileCurPos(outfile);
    OutputByte(outfile, (BYTE) 0);
-   
+
    /* Write out # of arguments */
-   OutputByte(outfile,  (BYTE) list_length(p));
-   
+   numparams = list_length(p);
+   // We can't address more than this amount, so check for it here too.
+   if (numparams > MAX_NAME_PARMS)
+      codegen_error("Too many parameters in message %s, found %i when max is %i.",
+         m->header->message_id->name, numparams, MAX_NAME_PARMS);
+
+   OutputByte(outfile,  (BYTE) numparams);
+
    /* Write out arguments themselves */
-      for ( ; p != NULL; p = p->next)
-	 codegen_parameter( (param_type) p->data);
+   for ( ; p != NULL; p = p->next)
+      codegen_parameter( (param_type) p->data);
 
    /* # of local variables, including parameters.  -1 is to start at 0. */
    numlocals = list_length(m->locals) + list_length(m->header->params) - 1;
@@ -1090,18 +1076,22 @@ void codegen_message(message_handler_type m)
    {
       maxtemp = codegen_statement( (stmt_type) s->data, numlocals);
       if (maxtemp > maxlocals)
-	 maxlocals = maxtemp;
+         maxlocals = maxtemp;
 
       /* Bomb out if statement had unforseen errors */
       if (!codegen_ok)
-	 return;
+         return;
    }
 
-   /* Backpatch in # of local variables */
+   // Error if we go over max locals, warning if we're approaching it.
    if (maxlocals > MAX_LOCALS)
-      codegen_error("More than %d local variables in handler %s.", MAX_LOCALS, 
-		    m->header->message_id->name);
+      codegen_error("Too many locals + params in message %s, found %i when max is %i.",
+         m->header->message_id->name, maxlocals, MAX_LOCALS);
+   else if (maxlocals > MAX_LOCALS - 8)
+      codegen_warning(m->header->lineno,"Message %s has %i locals + params, approaching max of %i.",
+         m->header->message_id->name, maxlocals, MAX_LOCALS);
 
+   /* Backpatch in # of local variables */
    FileGoto(outfile, localpos);
    OutputByte(outfile,  (BYTE) (maxlocals + 1));  /* +1 because we start counting at 0 */
    FileGotoEnd(outfile);

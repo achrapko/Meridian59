@@ -14,6 +14,16 @@ repository is for the "classic" version of the client, the Ogre client
 repository is at https://github.com/cyberjunk/meridian59-dotnet. A list of known
 servers is kept on the [105 website](https://www.meridiannext.com/community/).
 
+
+Contribute to Meridian 59 development
+--------------
+This is a volunteer project under active development. New contributors are
+always welcome, and you can read about how to get started contributing to the
+game on the [OpenMeridian105 GitHub wiki page](https://github.com/OpenMeridian105/Meridian59/wiki).
+No experience is required or assumed, and there are many different ways to
+contribute (coding, art, 3D model creation, room building, documentation).
+
+
 License
 --------------
 This project is distributed under a license that is described in the
@@ -122,8 +132,7 @@ directories (libzlib, libarchive, libpng and libjansson).
 Contact Information
 --------------
 For further information please join the #Meridian59de channel on
-irc.esper.net. You can also join us on the
-[forums](http://openmeridian.org/forums/index.php/board,23.0.html)
+irc.esper.net. You can also join us on the [forums](https://www.meridiannext.com/phpbb3/)
 where you can ask any questions about the game or the codebase.
 
 Forked from the [OpenMeridian codebase](https://github.com/OpenMeridian/Meridian59),

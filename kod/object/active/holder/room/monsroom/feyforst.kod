@@ -1,23 +1,23 @@
-% Meridian 59, Copyright 1994-2012 Andrew Kirmse and Chris Kirmse.
-% All rights reserved.
-%
-% This software is distributed under a license that is described in
-% the LICENSE file that accompanies it.
-%
-% Meridian is a registered trademark.
+// Meridian 59, Copyright 1994-2012 Andrew Kirmse and Chris Kirmse.
+// All rights reserved.
+//
+// This software is distributed under a license that is described in
+// the LICENSE file that accompanies it.
+//
+// Meridian is a registered trademark.
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+////////////////////////////////////////////////////////////////////////////////
 FeyForest is MonsterRoom
 
 constants:
 
    include blakston.khd
 
-   % Base light value for the room.
+   // Base light value for the room.
    BASE_LIGHT = LIGHT_NICE
 
-   % What we adjust the Karma in the room by to get the light modifier.
+   // What we adjust the Karma in the room by to get the light modifier.
    LIGHT_KARMA_ADJUST = -70
 
 resources:
@@ -139,16 +139,16 @@ messages:
       }
 
       iRoll = Random(1,100);
-      iRoll = iRoll + (Bound((piRoom_Karma - viEquilibrium)/5,-10,10));
+      iRoll += (Bound((piRoom_Karma - viEquilibrium)/5,-10,10));
 
       if (iRoll >= piRoom_Karma AND NOT darkguy) OR goodguy
       {
-         % Forest is evil.  Make it good.
+         // Forest is evil.  Make it good.
          oMonster = Create(&Fairy);
       }
       else
       {
-         % Forest is good.  Make it evil.
+         // Forest is good.  Make it evil.
          oMonster = Create(&EvilFairy);
       }
 
@@ -188,7 +188,7 @@ messages:
 
    FigureRoomKarma(bForceChange=FALSE)
    {
-      local i, gCount, eCount, oldKarma, iIndex;
+      local i, gCount, eCount, oldKarma, iIndex, oObj;
 
       gCount = 0;
       eCount = 0;
@@ -196,10 +196,11 @@ messages:
 
       foreach i in plActive
       {
-         if IsClass(First(i),&Fairy)
-            OR IsClass(First(i),&EvilFairy)
+         oObj = First(i);
+         if IsClass(oObj,&Fairy)
+            OR IsClass(oObj,&EvilFairy)
          {
-            if Send(First(i),@GetKarma) > 0
+            if Send(oObj,@GetKarma) > 0
             {
                ++gCount;
             }
@@ -218,7 +219,7 @@ messages:
 
       piRoom_Karma = (100 * gCount) / (gCount+eCount);
 
-      % enough have died for a change in the forest.
+      // enough have died for a change in the forest.
       if Send(self,@GetKarma) <> oldKarma
          OR bForceChange
       {
@@ -289,11 +290,11 @@ messages:
          Send(self,@ChangeTexture,#id=1,#new_texture=karma2,#flags=CTF_NORMALWALL);
       }
 
-      % See if we need to load the node.
+      // See if we need to load the node.
       oCenter = Send(SYS,@FindRoomByNum,#num=RID_C2);
       Send(oCenter,@KarmaChanged,#karma=karma);
 
-      % Lighten/darken the room as appropriate.
+      // Lighten/darken the room as appropriate.
       Send(self,@SetBaseLight,#amount=BASE_LIGHT+piRoom_Karma+LIGHT_KARMA_ADJUST);
 
       return;
@@ -311,65 +312,52 @@ messages:
          propagate;
       }
 
-      % Codes to change the room Karma
+      // Codes to change the room karma, spawn mobs or change the forest karma.
       if StringEqual(string,"room very good")
       {
          Send(self,@AdjustRoomKarma,#value=100);
       }
-
-      if StringEqual(string,"room good")
+      else if StringEqual(string,"room good")
       {
          Send(self,@AdjustRoomKarma,#value=75);
       }
-
-      if StringEqual(string,"room neutral")
+      else if StringEqual(string,"room neutral")
       {
          Send(self,@AdjustRoomKarma,#value=50);
       }
-
-      if StringEqual(string,"room evil")
+      else if StringEqual(string,"room evil")
       {
          Send(self,@AdjustRoomKarma,#value=25);
       }
-
-      if StringEqual(string,"room very evil")
+      else if StringEqual(string,"room very evil")
       {
          Send(self,@AdjustRoomKarma,#value=0);
       }
-      
-      % Codes to spawn monsters
-      if StringEqual(string,"good fey")
+      else if StringEqual(string,"good fey")
       {
          Send(self,@TryCreateMonster,#goodguy=TRUE);
       }
-
-      if StringEqual(string,"evil fey")
+      else if StringEqual(string,"evil fey")
       {
          Send(self,@TryCreateMonster,#darkguy=TRUE);
       }
-
-      % Codes to set forest Karma
-      if StringEqual(string,"forest very good")
+      else if StringEqual(string,"forest very good")
       {
          iValue = 100;
       }
-
-      if StringEqual(string,"forest good")
+      else if StringEqual(string,"forest good")
       {
          iValue = 75;
       }
-
-      if StringEqual(string,"forest neutral")
+      else if StringEqual(string,"forest neutral")
       {
          iValue = 50;
       }
-
-      if StringEqual(string,"forest evil")
+      else if StringEqual(string,"forest evil")
       {
          iValue = 25;
       }
-
-      if StringEqual(string,"forest very evil")
+      else if StringEqual(string,"forest very evil")
       {
          iValue = 0;
       }
@@ -428,7 +416,7 @@ messages:
          }
       }
 
-      % Force a change, because we've pre-set the Karma value.
+      // Force a change, because we've pre-set the Karma value.
       Send(self,@FigureRoomKarma,#bForceChange=TRUE);
 
       return;
@@ -443,4 +431,4 @@ messages:
    }
 
 end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+////////////////////////////////////////////////////////////////////////////////
