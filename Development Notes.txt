@@ -1,0 +1,39 @@
+adminfn.c notes
+
+show matches spell pbEnabled = int 0
+:< matching instances of CLASS Spell (10414) pbEnabled = INT 0
+: OBJECT 3587 CLASS IceNova (10840) pbEnabled = INT 0
+: OBJECT 3588 CLASS FireStorm (10841) pbEnabled = INT 0
+: OBJECT 3656 CLASS DeathsDoor (10909) pbEnabled = INT 0
+: 3 total
+: Objects list: LIST 85154
+:>
+Time to run: 477.443 microseconds
+
+
+AdminShowClass - pretty much everything I'll need to reference 
+
+
+send o 7350 AddSpell num int 189	//o 7350 is some player object number
+send o #### AddSpell num int 189, bDM int 1,...
+
+send o 0123 FunctionName parms type value[, parms type value...] //case sensitive? probably
+
+
+Shal/Kraanan - Spirit Hammer?
+Shal/Qor - ?
+Shal/Faren - Lightning Helix
+Shal/Jala - 
+Shal/Riija - 
+
+Kraanan/Qor - ?
+Kraanan/Faren - 
+Kraanan/Jala - 
+Kraanan/Riija - 
+
+Qor/Faren - Blightning/Hellfire
+Qor/Jala - Dance Macabre
+Qor/Riija - Poultergeist
+
+Faren/Jala - 
+Faren/Riija - 

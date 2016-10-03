@@ -1442,8 +1442,8 @@ messages:
             AppendTempString(Send(First(lTargets),@GetTrueName));
          }
 
-         GodLog("DM ",Send(who,@GetTrueName)," cast the spell ",
-               Send(self,@GetName),GetTempString());
+         % GodLog("DM ",Send(who,@GetTrueName)," cast the spell ",
+               % Send(self,@GetName),GetTempString());
       }
 
       if NOT bItemCast

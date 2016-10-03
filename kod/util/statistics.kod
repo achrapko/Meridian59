@@ -215,7 +215,7 @@ messages:
                return;
             }
          }
-         Debug("Got an unknown spell cast, id is", iNum);
+         % Debug("Got an unknown spell cast, id is", iNum);
       }
 
       return;

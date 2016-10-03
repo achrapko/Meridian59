@@ -20,13 +20,13 @@ resources:
    chainheal_icon_rsc = iheal.bgf
    chainheal_desc_rsc = \
       "Chain Heal Debugging. Takes herbs and emeralds."
-	  
+     
    chainheal_spell_intro = \
       "Shal'ille Lv. 7: Heals the target then finds more allies."
 
-	  test_rsc = "Chain Heal lTargets"
-	  test_rsc2 = "Chain Heal lActive"
-	  
+      test_rsc = "Chain Heal lTargets"
+      test_rsc2 = "Chain Heal lActive"
+     
 classvars:
    
    vrName = chainheal_name_rsc
@@ -46,18 +46,36 @@ classvars:
    viSpell_num = SID_CHAIN_HEAL
    viMana = 5
    viSchool = SS_SHALILLE
+   viPersonal_ench = FALSE
    viSpell_level = 7
    viChance_To_Increase = 95
    viMeditate_ratio = 100
    
 properties:
 
+   %timers
+   ptCooldown
+   ptNextHeal
+   
+   %timer values
+   piNextHeal_delay = 10000
+
+   piMaxPlayersHealed = 5
+   
+   %list of  all players to be healed
+   poFirst
+   poSecond
+   pbDone = FALSE
+   
+   %debug flags for lighting effects
    pbLogs = FALSE
    pbDebug = FALSE
    piDebugSpeed = 3
    piDebugColor = 1
    piIntensity = 100
    piLightFlags = 1
+   piRepeatProjectiles = 1
+   piDebugSpellpower = 1
    
 messages:
 
@@ -72,109 +90,285 @@ messages:
       return;
    }
    
-   CastSpell(who=$,lTargets=$)
+   %%%%%%%%%%%%%
+   %   Cast on 1 target (possibly yourself) to instantly heal that target, then wait
+   %   a variable delay before healing the next target (and sending animation from T1 to T2)
+   %   ...variable delay before healing the Next target (and sending animation from T2 to T3)...
+   %   
+   %   So the initial idea was to use a timer for the delay between heal procs (ptNextHeal)
+   %   That does not work because only 1 instance of the spell is created so each cast re-inits that same timer
+   %   
+   %   It was suggested to reference boon.kod how it handles 'extended' enchantments
+   %   This seemed good and would essentially work by making a list of all targets
+   %   (plTargets) that would get passed through StartEnchantment() and EndEnchanment()
+   %   so we could track which player would be effected next. 
+   %   EndEnchantment() would call StartEnchantment() on the next object in the list.
+   %   
+   %   Further research leads to this causing errors in how enchantments are handled - specifically
+   %   because of FreezeAllEnchantments() called when a player logs off- 
+   %   This is bad because if a player is healed, and logs off before it fires again do we fail out? Or try to terminate
+   %   the delay early (delay won't be long enough to make this effective in 'gaming' it) and just heal the next target
+   %   
+   %   I don't want to start pulling apart / modifying enchantment code in player.kod
+   %   
+   %%%%%%%%%%%%%
+   %   Make a DelayedEffect class of spells
+   %   Add to player.kod plDelayedSpellTimers
+   %   Any DelayedEffect spell created will have a unique index into the Timers array
+   %   Players can only be under the effect of a given DelayedEffect spell once, and additional casts
+   %   can either be ignored, or increase power/duration (depends on what the effect is) which is handled in
+   %   that unique spells class. So for ChainHeal we would want to ignore an additional cast, OR
+   %   the list of timers is a list of list of timers but we only run the first one. So someone can spam chain heal on you, assuming they can cast faster
+   %   than the delay of ptNextHeal, so it queues up the timers and only the first one runs.
+   %%%%%%%%%%%%%
+   %   We're going back to the suggested idea of EndEnchantment calling StartEnchantment on the next target - info passed via iState
+   %%%%%%%%%%%%%
+   
+   CastSpell(who=$,lTargets=$,iSpellPower=0)
    {
-      local i,each_obj,lFinalTargets,oRoom,lActive,oFirst;
-	  oRoom = Send(who,@GetOwner);
-	  lActive = Send(oRoom,@GetHolderActive);
-	  
-	  %Debug("room = ",oRoom); %Gets the object number of their room
-	  % oFirst = First(Send(oRoom,@GetHolderActive));- "First =,LIST 80351"
-	  % oFirst = First(First(Send(oRoom,@GetHolderActive))); - "First = ,ACCOUNT 5 OBJECT 6981"
-	  oFirst = Send(oRoom,@HolderExtractObject,#data=First(Send(oRoom,@GetHolderActive)));
-	  % First(Send(oRoom,@GetHolderActive));
-	  Debug("First = ",oFirst);
-	  
-	  lFinalTargets = $;
-	  
-	  if pbLogs = TRUE
+      local i, each_obj, lFinalTargets, oTarget, numProjectiles, index, lState, iIterations, iHealthPool, oRoom, lActive;
+
+      oTarget = First(lTargets);
+      numProjectiles = 0;
+      index = 1;
+      %%%Will probably need to do a last minute check that the target is still in the room - skip them if they're not
+     
+      if iSpellPower < 20
       {
-         Debug("pbDebugSpeed = ",piDebugSpeed,"\npbDebugColor = ",piDebugColor);
-		 Debug("piIntensity = ",piIntensity,"\npiLightFlags = ",piLightFlags);
+         iIterations = 3;
+         iHealthPool = 4500;
+      }
+      else if iSpellPower < 40
+      {
+         iIterations = 4;
+         iHealthPool = 6000;
+      }
+      else if iSpellPower < 60
+      {
+         iIterations = 5;
+         iHealthPool = 10000;
+      }
+      else if iSpellPower < 80
+      {
+         iIterations = 6;
+         iHealthPool = 15000;
+      }
+      else
+      {
+         iIterations = 7;
+         iHealthPool = 17500;
+      }
+	  
+      if pbLogs = TRUE
+      {
+         Debug("oTarget = ",oTarget);
+         Debug("iIterations = ",iIterations);
+         Debug("iHealthPool = ",iHealthPool);
+         % Debug("pbDebugSpeed = ",piDebugSpeed,"\npbDebugColor = ",piDebugColor);
+         % Debug("piIntensity = ",piIntensity,"\npiLightFlags = ",piLightFlags);
       }
 
+	  iHealthPool = iHealthPool - Send(oTarget,@GainHealthNormal,#amount=2000,#precision=TRUE);
 	  
-	  foreach i in Send(Send(who,@GetOwner),@GetHolderActive)
-	  {
-	     each_obj = Send(Send(who,@GetOwner),@HolderExtractObject,#data=i);
-	     if IsClass(each_obj,&User)
-	     {
-		    %Get a list of all Users in the room.
-			%Check if the user is an ally/enemy/neutral
-			%Add allies first, then neutrals
-			%Prioritize Guildmates over shieldmates over factionmates over builder-allies
-			
-			%Calculate total to heal and distribute it over each ally, or heal each subsequent player some percentage of the previous
-	        Send(each_obj,@MsgSendUser,#message_rsc=test_rsc);
-			Send(each_obj,@SomethingShot,#who=who,#target=oFirst,#projectile=self,#flags=viProjectileFlag);
-			% Send(each_obj,@SomethingShot,#who=who,#target=,#projectile=self,#flags=viProjectileFlag);
-	     }
-	  }
-	  
-	  % foreach i in lTargets
-	  % {
-         % Send(i,@MsgSendUser,#message_rsc=vrTestRsc);
-	  % }
-	  
-	  % foreach i in lActive
-	  % {
-         % if 
-         % Send(i,@MsgSendUser,#message_rsc=vrTestRsc2);  
-	  % }
-	  
-	  % foreach each_obj in Send(Send(who,@GetOwner),@GetHolderActive)
-	  % {
-         % if IsClass(each_obj,&User)
-		 % {
-			 % Send(i,@MsgSendUser,#message_rsc=vrTestRsc);
-		 % }
-      % }
-	  
-	  % Show bolt flying through the air.
-      %foreach i in lTargets
-      %{
-      %   Send(oOwner,@SomethingShot,#who=who,#target=i,#projectile=self,
-      %         #flags=viProjectileFlag);
-      %}
-	  
+      lState = AppendListElem(iIterations,lState);			% remaining iterations
+      lState = AppendListElem(iHealthPool,lState);			% points remaining to heal from
+      lState = AppendListElem(piNextHeal_delay,lState);	% time to wait before next heal
+      lState = AppendListElem(who,lState);					% who cast the spell
+      lState = AppendListElem(oTarget,lState);				% who has been healed so far
 
-      % Show bolt flying through the air.
-
-%      foreach i in lActive
-%      {
-%         each_obj = Send(oOwner,@HolderExtractObject,#data=i);
-%
-%%         if isClass(each_obj,&Player)
-%%         {
-%%            Send(oOwner,@SomethingShotRadius,#who=who,#projectile=self,
-%%                  #flags=viProjectileFlag,#range=piRange/FINENESS,
-%%                  #number=piNumber,#iLightIntensity=viProjectileLightIntensity,
-%%                  #iLightColor=viProjectileLightColor,#speed=piSpeed);
-%%         }
-%      }
-
+	  
+      Send(oTarget,@StartEnchantment,#what=self,#time=piNextHeal_delay,#state=lState);
+     
       propagate;
    }
 
-%%%MIGHT BE ABLE TO USE THIS TO SEND ANIMATIONS BETWEEN TWO OTHER TARGETS%%%
-% DoMissileAttack()
-% {
-% pbFire = TRUE;
-% Send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile=self);
-% Send(self,@TryAttack,#what=poTarget,#stroke_obj=self);
-% return;
-% }
-
-   GetHealAmount(oTarget=$,iSpellPower=1)
+   EndEnchantment(who = $, state = 0, report = TRUE)
    {
-      if (oTarget = $)
-      {
-         Debug("Trying to get heal amount for $ target!");
+      local iIterations, iHealthPool, iDelay, oCaster, lHealed, lStateInfo, oNextTarget;
+      %% This will handle actually finding the next target, healing that target, and starting the delay on that target.
+      %% state will hold a list with the structure [[RemainingIterations],[Delay],[OriginalCaster],[TargetsHealed(in order)]]
+      %% For consideration: Store the room it was cast in, and fail out of we've left the room?
+      lStateInfo = state;
+     
+      iIterations = First(lStateInfo);
+      lStateInfo = DelListElem(lStateInfo,First(lStateInfo));
 
-         return 1;
+      iHealthPool = First(lStateInfo);
+      lStateInfo = DelListElem(lStateInfo,First(lStateInfo));
+     
+      iDelay = First(lStateInfo);
+      lStateInfo = DelListElem(lStateInfo,First(lStateInfo));
+     
+      oCaster = First(lStateInfo);
+      lStateInfo = DelListElem(lStateInfo,First(lStateInfo));
+     
+      lHealed = First(lStateInfo); %goes from a list with 1 element that is a list of objects to just a list of objects.
+      lStateInfo = DelListElem(lStateInfo,First(lStateInfo));
+     
+      if pbLogs = TRUE
+      {
+         Debug("---ENDING ENCHANTMENT---");
+         Debug("iIterations = ",iIterations);
+         Debug("iHealthPool = ",iHealthPool);
+         % Debug("iDelay = ",iDelay);
+         Debug("oCaster = ",oCaster);
+         Debug("lHealed = ",lHealed);
+      }
+     
+      iIterations--;
+
+      if iIterations <> 0
+      {
+         oNextTarget = Send(self,@DetermineTargets,#who=oCaster,#lHealed=lHealed);
+         if(oNextTarget <> $)
+         {
+            iHealthPool = iHealthPool - Send(oNextTarget,@GainHealthNormal,#amount=2000,#precision=TRUE);
+            lStateInfo = AppendListElem(iIterations,lStateInfo);		% remaining iterations
+            lStateInfo = AppendListElem(iHealthPool,lStateInfo);    % points remaining to heal from
+            lStateInfo = AppendListElem(iDelay,lStateInfo);   	 	% time to wait before next heal
+            lStateInfo = AppendListElem(oCaster,lStateInfo);    	% who cast the spell
+            lStateInfo = AppendListElem(lHealed,lStateInfo);    		% who has been healed so far
+            Send(oNextTarget,@StartEnchantment,#what=self,#time=iDelay,#state=lStateInfo);
+         }
+         else
+         {
+            Debug("Nothing left to heal");
+         }
       }
 
-      return 100;
+      return;
+   }
+   
+   
+   DetermineTargets(who=$,lHealed=$)
+   {
+      local oTarget, oRoom, lActive, lTargets, i, eachObj, tGuild, pGuild, search;
+
+      oTarget = $;
+      oRoom = Send(who,@GetOwner);
+      lActive = Send(oRoom,@GetHolderActive);
+      pGuild = Send(who,@GetGuild);
+      search = 1;
+     
+      
+      while search <= 5
+      {
+         switch(search)
+         {
+            case 1: %looking for guildmates of who (oCaster) that have not been healed (not in lHealed)
+               if pGuild <> $
+               {
+                  foreach i in lActive
+                  {
+                     eachObj = Send(oRoom,@HolderExtractObject,#data=i);
+                     if (eachObj <> who) AND (FindListElem(lHealed,eachObj)  = $) %not the caster, and has not been healed
+                     {
+                        if IsClass(eachObj,&User)
+                        {
+                           tGuild = Send(eachObj,@GetGuild);
+                           %%Check guild relations
+                           if tGuild <> $
+                           {
+                              if pGuild = tGuild
+                              {
+                                 Debug("Found guildmate that was not healed yet");
+                                 oTarget = eachObj;
+								 search = 6;
+								 break;
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            break;
+            case 2: %looking for members of ally guild of who (oCaster) that have not been healed (not in lHealed)
+               if pGuild <> $
+               {
+                  foreach i in lActive
+                  {
+                     eachObj = Send(oRoom,@HolderExtractObject,#data=i);
+                     if (eachObj <> who) AND (FindListElem(lHealed,eachObj)  = $) %not the caster, and has not been healed
+                     {
+                        if IsClass(eachObj,&User)
+                        {
+                           tGuild = Send(eachObj,@GetGuild);
+                           %%Check guild relations
+                           if tGuild <> $
+                           {
+                              if Send(pGuild,@IsAlly,#otherguild=tGuild) %we only care if You consider Them an ally, not the other way around
+                              {
+                                 Debug("Found someone in ally guild that was not healed yet");
+                                 oTarget = eachObj;
+								 search = 6;
+								 break;
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            break;
+            case 3: %looking for same faction soldiers of who (oCaster) that have not been healed (not in lHealed)
+               if Send(who,@GetFaction) <> $
+               {
+                  foreach i in lActive
+                  {
+                     eachObj = Send(oRoom,@HolderExtractObject,#data=i);
+                     if (eachObj <> who) AND (FindListElem(lHealed,eachObj)  = $) %not the caster, and has not been healed
+                     {
+                        if IsClass(eachObj,&User)
+                        {
+                           if (Send(eachObj,@GetFaction) = Send(who,@GetFaction))
+                           {
+                              Debug("Found faction member that was not healed yet");
+                              oTarget = eachObj;
+                              search = 6;
+                              break;
+                           }
+                        }
+                     }
+                  }
+               }
+            break;
+            case 4: %looking for same faction non-soldiers of who (oCaster) that have not been healed (not in lHealed)
+               if Send(who,@GetFaction) <> $
+               {
+                  foreach i in lActive
+                  {
+                     eachObj = Send(oRoom,@HolderExtractObject,#data=i);
+                     if (eachObj <> who) AND (FindListElem(lHealed,eachObj)  = $) %not the caster, and has not been healed
+                     {
+                        if IsClass(eachObj,&User)
+                        {
+                           if (Send(eachObj,@GetFaction) = Send(who,@GetFaction))
+                           {
+                              Debug("Found faction member that was not healed yet");
+                              oTarget = eachObj;
+                              search = 6;
+                              break;
+                           }
+                        }
+                     }
+                  }
+               }
+            break;
+            case 5: %looking for any non-enemies of who (oCaster) that have not been healed (not in lHealed)
+               if NOT Send(eachObj,@CheckPlayerFlag,#flag=PFLAG_MURDERER)
+                  AND NOT Send(eachObj,@CheckPlayerFlag,#flag=PFLAG_OUTLAW)
+               {
+                  Debug("Found non-enemy that was not healed yet");
+				  oTarget = eachObj;
+				  search = 6;
+				  break;
+               }
+            break;
+         }
+         search++;
+      }
+	  
+	  
+      return oTarget;
    }
 
    
@@ -183,27 +377,27 @@ messages:
    {
       if pbDebug = TRUE
       {
-         return piDebugSpeed;	%Speed based on distance might look nice as well  - Speed 14 loogs good at very long range, and 8 looks better at closer range
+         return piDebugSpeed;   %Speed based on distance might look nice as well  - Speed 14 looks good at very long range, and 8 looks better at closer range
       }
-	  
+     
       return 12;
    }
    
    GetProjectileLightFlags()
    {
-	   % General lighting information.
+      % General lighting information.
       if pbDebug = TRUE
-	  {
+     {
          if piLightFlags = 1 {return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;}
          if piLightFlags = 2 {return LIGHT_FLAG_ON | LIGHT_FLAG_WAVERING;}
          if piLightFlags = 3 {return LIGHT_FLAG_ON | LIGHT_FLAG_HIGHLIGHT;}
          if piLightFlags = 4 {return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC | LIGHT_FLAG_WAVERING;}
          if piLightFlags = 5 {return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC | LIGHT_FLAG_HIGHLIGHT;}
          if piLightFlags = 6 {return LIGHT_FLAG_ON | LIGHT_FLAG_WAVERING | LIGHT_FLAG_HIGHLIGHT;} %Looks the best (small orb)
-																													%Might be able to generate multiple based on distance to have them chain out
+                                                                                       %Might be able to generate multiple based on distance to have them chain out
          if piLightFlags > 6 {return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;}
-	  }
-	  return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;
+     }
+      return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;
    }
    
    GetProjectileLightIntensity()
@@ -215,9 +409,9 @@ messages:
    GetProjectileLightColor()
    {
       local iColor;
-	  
+     
       if pbDebug = TRUE
-	  {
+     {
          switch(piDebugColor)
          {
             case 1: iColor = LIGHT_BWHITE; break;
