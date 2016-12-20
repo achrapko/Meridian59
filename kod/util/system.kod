@@ -420,9 +420,9 @@ properties:
 
    piLogoffPenaltyDecayCounter = 0
    // Players' LogoffPenaltyCounters decrement this often.
-   //  units: 2 hrs (12 = 24 hrs)
-   piLogoffPenaltyDecayTime = 12                
-                                                
+   //  units: 2 hrs (6 = 12 hrs)
+   piLogoffPenaltyDecayTime = 6
+
    pbLogoffPenaltyEnable = TRUE
 
    // At this value of the player's penalty counter, penalties are as severe as
@@ -636,7 +636,7 @@ messages:
       Send(self,@CreateUserTable);
 
       Send(self,@RecreateNecromancerBalance);
-      Send(self,@ClearAllQuests);
+      Send(self,@RecreateClearQuests);
       Send(self,@CreateAllBanksIfNew);
       Send(self,@CreateAllVaultsIfNew);
       Send(self,@RecreateAllBrains);
@@ -3178,6 +3178,7 @@ messages:
       Send(self,@CreateOneSpellIfNew,#num=SID_NIGHT_VISION,#class=&NightVision);
       Send(self,@CreateOneSpellIfNew,#num=SID_FIREBALL,#class=&Fireball);
       Send(self,@CreateOneSpellIfNew,#num=SID_DMRESCUE,#class=&DMRescue);
+      Send(self,@CreateOneSpellIfNew,#num=SID_DELIVERANCE_TOUCH,#class=&DeliveranceTouch);
       Send(self,@CreateOneSpellIfNew,#num=SID_SPECTATE,#class=&Spectate);
       Send(self,@CreateOneSpellIfNew,#num=SID_RESCUE,#class=&Rescue);
       Send(self,@CreateOneSpellIfNew,#num=SID_SMITE,#class=&Smite);
@@ -3186,6 +3187,7 @@ messages:
       Send(self,@CreateOneSpellIfNew,#num=SID_INSIGHT,#class=&Insight);
       Send(self,@CreateOneSpellIfNew,#num=SID_EVALUATE,#class=&Evaluate);
       Send(self,@CreateOneSpellIfNew,#num=SID_ENGRAVE,#class=&Engrave);
+      Send(self,@CreateOneSpellIfNew,#num=SID_DM_ITEMATT,#class=&DivineEnchantment);
       Send(self,@CreateOneSpellIfNew,#num=SID_SLITHERBOLT,#class=&Slitherbolt);
 
       Send(self,@CreateOneSpellIfNew,#num=SID_CURSE_WEAPON,#class=&CurseWeapon);
@@ -3256,6 +3258,7 @@ messages:
       Send(self,@CreateOneSpellIfNew,#num=SID_MANA_FOCUS,#class=&ManaFocus);
       Send(self,@CreateOneSpellIfNew,#num=SID_MANA_BOMB,#class=&ManaBomb);
       Send(self,@CreateOneSpellIfNew,#num=SID_DETECT_INVISIBLE,#class=&DetectInvisible);
+      Send(self,@CreateOneSpellIfNew,#num=SID_DM_DETECT_INVISIBLE,#class=&DMDetectInvisible);
       Send(self,@CreateOneSpellIfNew,#num=SID_DETECT_GOOD,#class=&DetectGood);
       Send(self,@CreateOneSpellIfNew,#num=SID_DETECT_EVIL,#class=&DetectEvil);
       Send(self,@CreateOneSpellIfNew,#num=SID_ICE_NOVA,#class=&IceNova);
@@ -3316,6 +3319,7 @@ messages:
       Send(self,@CreateOneSpellIfNew,#num=SID_QORBANE,#class=&QorBane);
       Send(self,@CreateOneSpellIfNew,#num=SID_VERTIGO,#class=&Vertigo);
       Send(self,@CreateOneSpellIfNew,#num=SID_DMHOLD,#class=&DMHold);
+      Send(self,@CreateOneSpellIfNew,#num=SID_SUPER_ROOM_HOLD,#class=&DMRoomHold);
       Send(self,@CreateOneSpellIfNew,#num=SID_SPELLBANE,#class=&Spellbane);
       Send(self,@CreateOneSpellIfNew,#num=SID_FLASH,#class=&Flash);
       Send(self,@CreateOneSpellIfNew,#num=SID_ANIMATE,#class=&Animate);
@@ -3790,6 +3794,11 @@ messages:
          AND FindListElem(plNewCharSpells,what))
       {
          plNewCharSpells = DelListElem(plNewCharSpells,what);
+      }
+
+      if (phSpells <> $)
+      {
+         DeleteTableEntry(phSpells,Send(what,@GetSpellNum));
       }
 
       if (plSpells <> $
@@ -4881,16 +4890,15 @@ messages:
             Send(i,@SetBirthYear,#year=Send(i,@GetBirthYear) + adjust);
          }
       }
-      
+
       return;
-      
    }
 
-   ClearAllQuests()
+   RecreateClearQuests()
    {
       if poQuestEngine <> $
       {
-         Send(poQuestEngine,@ClearAllQuests);
+         Send(poQuestEngine,@RecreateClearQuests);
       }
 
       return TRUE;
@@ -6809,6 +6817,16 @@ messages:
       return FindListElem(l,e);
    }
 
+   AdminListCopy(l = $)
+   {
+      return ListCopy(l);
+   }
+
+   AdminInsertListElem(l = $, i = 1, e = $)
+   {
+      return InsertListElem(l, i, e);
+   }
+
    AdminNth(l = $, n = $)
    {
       return Nth(l,n);
@@ -6837,6 +6855,39 @@ messages:
    AdminGetTime()
    {
       return GetTime();
+   }
+
+   AdminCreateList(iNum = 0, parm1 = $, parm2 = $, parm3 = $, parm4 = $,
+                   parm5 = $, parm6 = $, parm7 = $, parm8 = $, parm9 = $,
+                   parm10 = $)
+   "Creates a list with up to 10 elements. Number of elements needs to be "
+   "specified."
+   {
+      switch (iNum)
+      {
+         case 1:
+            return [parm1];
+         case 2:
+            return [parm1, parm2];
+         case 3:
+            return [parm1, parm2, parm3];
+         case 4:
+            return [parm1, parm2, parm3, parm4];
+         case 5:
+            return [parm1, parm2, parm3, parm4, parm5];
+         case 6:
+            return [parm1, parm2, parm3, parm4, parm5, parm6];
+         case 7:
+            return [parm1, parm2, parm3, parm4, parm5, parm6, parm7];
+         case 8:
+            return [parm1, parm2, parm3, parm4, parm5, parm6, parm7, parm8];
+         case 9:
+            return [parm1, parm2, parm3, parm4, parm5, parm6, parm7, parm8, parm9];
+         case 10:
+            return [parm1, parm2, parm3, parm4, parm5, parm6, parm7, parm8, parm9, parm10];
+      }
+
+      return;
    }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -7158,6 +7209,37 @@ messages:
       }
 
       return iList;
+   }
+
+   ValidStatCheck()
+   "Checks all players for valid statistics (200 points or less)."
+   {
+      local i, bFound;
+
+      bFound = FALSE;
+
+      foreach i in plUsers
+      {
+         if (IsClass(i,&DM)
+            OR IsClass(i,&EscapedConvict))
+         {
+            continue;
+         }
+
+         if (Send(i,@GetRawStatisticsTotal) > 200)
+         {
+            bFound = TRUE;
+            Debug("ALERT!! Player ",i,Send(i,@GetTrueName),
+               " has more than 200 raw stat points!");
+         }
+      }
+
+      if (NOT bFound)
+      {
+         Debug("No players with invalid stats found.");
+      }
+
+      return;
    }
 
    FixSpellLevelChange(num=0)

@@ -243,6 +243,11 @@ resources:
    player_experience_gained = "You have gained ~B~s%i~v~B XP."
    player_experience_lost = "You have lost ~B~r%i~B~v XP!"
 
+   player_unbound_energy_gained = "You gather ~B~t%i~v~B unbound energy "
+      "from your fallen enemy."
+   player_unbound_energy_lost = "You channel ~B~t%i~v~B unbound energy "
+      "to shape your spell."
+
    player_health_gain_maxed = "Your health cannot increase any further."
 
    player_cant_hit_optout = \
@@ -570,6 +575,12 @@ resources:
       "fleeting.  Vigor can be restored either through needed rest or a "
       "hearty meal."
       "\n\n"
+      "When you reach 50 health, I will no longer be able to protect you from "
+      "combat with other players.  If you do not wish to partake in player-"
+      "versus player combat, you can opt-out by visiting the Temple of "
+      "Shal'ille (north from the town of Marion) and following the directions "
+      "on the sign placed there."
+      "\n\n"
       "I congratulate you on your recent success.  I know the bards will sing "
       "of your future exploits."
       "\n\n"
@@ -852,6 +863,10 @@ properties:
    piTraining_points = 0
    piInform = TRUE
 
+   // This keeps track of unbound energy, which isused for free spell casts.
+   piUnbound_energy = 0
+   pbFree_cast = FALSE
+
    // This keeps track of when we've last received our daily training points.
    piReward_timestamp = 0
 
@@ -965,6 +980,7 @@ properties:
    ptHealth = $
    ptAdvancement = $
    ptRest = $
+   ptUnboundEnergy = $
 
    // Poison info
    ptPoison = $
@@ -1116,6 +1132,7 @@ properties:
 
    // Time remaining phased out
    ptPhaseTimer = $
+   ptPhaseRegenTimer = $
    ptPhaseVisualEffectTimer = $
    piRemainingPhaseTime = 60000 * 8
    ptCanPhaseTimer = $
@@ -1139,6 +1156,12 @@ messages:
       foreach i in Send(SYS,@GetGuilds)
       {
          Send(i,@RemoveFromFormerMemberList,#who=self);
+      }
+
+      if ptUnboundEnergy <> $
+      {
+         DeleteTimer(ptUnboundEnergy);
+         ptUnboundEnergy = $;
       }
 
       if ptHealth <> $
@@ -1198,6 +1221,12 @@ messages:
       }
 
       Send(self,@CancelRescue);
+
+      if (ptPhaseRegenTimer <> $)
+      {
+         DeleteTimer(ptPhaseRegenTimer);
+         ptPhaseRegenTimer = $;
+      }
 
       if ptAttackTimer <> $
       {
@@ -2296,7 +2325,8 @@ messages:
       SendList(plPassive, 0, @UserLogon);
       SendList(plActive, 0, @UserLogon);
 
-      // Restart Health and Mana timers
+      // Restart Unbound Energy, Health and Mana timers
+      Send(self,@NewUnboundEnergy);
       Send(self,@NewHealth);
       Send(self,@NewMana);
 
@@ -2341,6 +2371,17 @@ messages:
       if ptTempSafe <> $
       {
          Send(self,@UnpauseTempSafe);
+      }
+
+      // Possibly start phase time regen.
+      if (piRemainingPhaseTime < Send(self,@GetBasePhaseTime))
+      {
+         if (ptPhaseRegenTimer <> $)
+         {
+            DeleteTimer(ptPhaseRegenTimer);
+         }
+         // 5 sec delay so flashing on/off doesn't regen time.
+         ptPhaseRegenTimer = CreateTimer(self,@RegenPhaseTime,5000);
       }
 
       if piPoisonStrength > 0
@@ -2434,7 +2475,13 @@ messages:
          Send(self,@FactionServiceTimer,#renew=FALSE);
       }
 
-      // Stop health and mana timers.
+      // Stop unbound energy, health and mana timers.
+      if ptUnboundEnergy <> $
+      {
+         DeleteTimer(ptUnboundEnergy);
+         ptUnboundEnergy = $;
+      }
+
       if ptHealth <> $
       {
          DeleteTimer(ptHealth);
@@ -2459,6 +2506,13 @@ messages:
       }
 
       Send(self,@CancelRescue);
+
+      // If phase time regen timer is active, delete it.
+      if (ptPhaseRegenTimer <> $)
+      {
+         DeleteTimer(ptPhaseRegenTimer);
+         ptPhaseRegenTimer = $;
+      }
 
       // Tell others that we're leaving
       if poOwner <> $ AND NOT IsClass(self,&DM)
@@ -2534,7 +2588,7 @@ messages:
       }
 
       // Validate that all face parts were in the list of choices
-      prHead = Send(self, @RestrictToResourceList, #res = Nth(lFaceparts,1),
+      prHead = Send(self, @RestrictToResourceList, #res = First(lFaceparts),
           #res_list = Send(SYS, @GetAllowedHeadIcons, #iGender = gender));
 
       prToupee = Send(self, @RestrictToResourceList, #res = Nth(lFaceparts,2), 
@@ -2616,7 +2670,7 @@ messages:
       }
       else
       {
-         piMight = Nth(lStats,1);
+         piMight = First(lStats);
          piIntellect = Nth(lStats,2);
          piStamina = Nth(lStats,3);
          piAgility = Nth(lStats,4);
@@ -3210,6 +3264,15 @@ messages:
    SetKillTarget(target=$)
    {
       poKill_target = target;
+
+      return;
+   }
+
+   UnboundEnergyTimer()
+   {
+      ptUnboundEnergy = $;
+
+      Send(self,@LoseUnboundEnergy);
 
       return;
    }
@@ -3894,19 +3957,26 @@ messages:
 
    CheckPosition(what=$,type=$,space=0)
    {
-      local i, iSpace;
+      local i, iSpace, bToken;
 
       if space = 0 OR type = $ OR what = $
       {
          return FALSE;
       }
 
+      bToken = FALSE;
+
       iSpace = space;
       foreach i in plUsing
       {
          if Send(i,@GetItemUseType) & type
          {
-            iSpace = iSpace - Send(i,@GetItemUseAmount);
+            iSpace -= Send(i,@GetItemUseAmount);
+         }
+
+         if (IsClass(i,&Token) OR IsClass(i,&Totem))
+         {
+            bToken = TRUE;
          }
       }
 
@@ -3918,8 +3988,16 @@ messages:
          }
 
          // These unequip amongst themselves automatically.
+         if IsClass(what,&Gauntlet)
+         {
+            return TRUE;
+         }
+
+         // Defense modifiers unequip the competing item, but if the player
+         // has a token or totem they cannot equip another hand slot item.
          if IsClass(what,&DefenseModifier)
-            OR IsClass(what,&Gauntlet)
+            AND NOT (bToken
+               AND type = ITEM_USE_HAND)
          {
             return TRUE;
          }
@@ -4375,7 +4453,8 @@ messages:
          return TRUE;
       }
 
-      if Send(self,@IsInCannotInteractMode)
+      if actual
+         AND Send(self,@IsInCannotInteractMode)
       {
          if report
          {
@@ -4856,7 +4935,7 @@ messages:
       }
 
       // If we have minions, see if they can attack too
-      Send(self,@CommandMinionAttack,#oMaster=self,#oTarget=what);
+      Send(self,@CommandMinionAttack,#oTarget=what);
 
       // Can pay costs?  Only check for skills, spells have already been cast.
       if IsClass(stroke_obj,&Skill)
@@ -4890,14 +4969,25 @@ messages:
          return FALSE;
       }
 
-      // Special case assassin's daggers
+      // Special case attacks
       if use_weapon <> $
-         AND IsClass(use_weapon,&BlackDagger)
-         AND IsClass(stroke_obj,&Stroke)
       {
-         // Let the assassin's game handle it
-         return Send(Send(SYS,@GetAssassinGame),@TryAssassinAttack,
-                     #attacker=self,#target=what,#dagger_obj=use_weapon);
+         // Black dagger.
+         if IsClass(use_weapon,&BlackDagger)
+            AND IsClass(stroke_obj,&Stroke)
+         {
+            // Let the assassin's game handle it
+            return Send(Send(SYS,@GetAssassinGame),@TryAssassinAttack,
+                        #attacker=self,#target=what,#dagger_obj=use_weapon);
+         }
+
+         // Deliverance touch attack for DMs. Handled here to trigger attack
+         // timer and range checks.
+         if (IsClass(use_weapon,&DeliveranceTouch))
+         {
+            return Send(use_weapon,@TryDeliveranceAttack,#who=self,
+                        #oTarget=what);
+         }
       }
 
       if IsClass(what,&Monster)
@@ -5007,8 +5097,8 @@ messages:
    // iRange=$ means there's no range check.
    TargetWithinSightAndRange(oTarget=$,iRange=$,use_weapon=$,stroke_obj=$)
    {
-      local iSquareRange, iDist, oTargetOwner, oFinalTarget, iAngle,
-            iRow, iCol, iTargetRow, iTargetCol;
+      local iDist, oTargetOwner, oFinalTarget, iAngle, iRow, iCol,
+            iTargetRow, iTargetCol;
 
       oTargetOwner = Send(oTarget,@GetOwner);
 
@@ -5040,17 +5130,12 @@ messages:
 
       // See if target is within range, if we provided a range.
       if iRange <> $
+         AND iDist > iRange * iRange
       {
-         iSquareRange = iRange;
-         iSquareRange = iSquareRange * iSquareRange;
+         Send(self,@SendAttackOutOfRangeMessage,#what=oFinalTarget,
+              #use_weapon=use_weapon,#stroke_obj=stroke_obj);
 
-         if iDist > iSquareRange
-         {
-            Send(self,@SendAttackOutOfRangeMessage,#what=oFinalTarget,
-                 #use_weapon=use_weapon,#stroke_obj=stroke_obj);
-
-            return FALSE;
-         }
+         return FALSE;
       }
 
       // See if target is in a reasonable viewing area.
@@ -5505,7 +5590,7 @@ messages:
       if what <> $
          AND IsClass(what,&Battler)
       {
-         Send(self,@CommandMinionAttack,#oMaster=self,#oTarget=what);
+         Send(self,@CommandMinionAttack,#oTarget=what);
       }
 
       if what <> $ AND IsClass(what,&monster)
@@ -6821,8 +6906,24 @@ messages:
 
    EatSomething(nutrition = 0, filling = 0)
    {
-      Send(self,@AddExertion,#amount=-10000*nutrition);
-      piStomach = piStomach + filling;
+      Send(self,@AddExertion,#amount=-10000 * nutrition);
+      piStomach += filling;
+
+      return;
+   }
+
+   LoseUnboundEnergy()
+   {
+      local iReduction;
+
+      if NOT Send(self,@IsInCannotInteractMode)
+      {
+         iReduction = Bound(piUnbound_energy * Send(SETTINGS_OBJECT,@GetUnboundDecay)
+                           / 1000,1,$);
+         piUnbound_energy -= iReduction;
+      }
+
+      Send(self,@NewUnboundEnergy);
 
       return;
    }
@@ -6833,7 +6934,7 @@ messages:
    {
       if NOT precision
       {
-         amount = amount*100;
+         amount *= 100;
       }
 
       if Send(self,@IsInCannotInteractMode)
@@ -6857,7 +6958,7 @@ messages:
    {
       if NOT precision
       {
-         amount = amount*100;
+         amount *= 100;
       }
 
       if NOT Send(self,@IsInCannotInteractMode)
@@ -6869,7 +6970,7 @@ messages:
          }
          else
          {
-            piHealth = piHealth + amount;
+            piHealth += amount;
          }
       }
 
@@ -6893,7 +6994,7 @@ messages:
 
       if NOT precision
       {
-         amount = amount*100;
+         amount *= 100;
       }
 
       iOldhealth = piHealth;
@@ -6910,16 +7011,55 @@ messages:
 
       if NOT Send(self,@IsInCannotInteractMode)
       {
-         pihealth = piHealth + amount;
-         if piHealth > piMax_health*100
+         pihealth += amount;
+         if piHealth > piMax_health * 100
          {
-            piHealth = piMax_health*100;
+            piHealth = piMax_health * 100;
          }
       }
 
       Send(self,@NewHealth);
 
       return (piHealth - iOldhealth);
+   }
+
+   NewUnboundEnergy(bDelay = FALSE)
+   {
+      if piUnbound_energy < 0
+      {
+         piUnbound_energy = 0;
+      }
+
+      if ptUnboundEnergy = $
+      {
+         if piUnbound_energy > 0
+         {
+            if bDelay
+            {
+               ptUnboundEnergy = CreateTimer(self,@UnboundEnergyTimer,
+                                       Send(SETTINGS_OBJECT,@GetUnboundDelay));
+            }
+            else
+            {
+               ptUnboundEnergy = CreateTimer(self,@UnboundEnergyTimer,1000);
+            }
+         }
+      }
+      else if piUnbound_energy = 0
+      {
+         DeleteTimer(ptUnboundEnergy);
+         ptUnboundEnergy = $;
+      }
+      else if bDelay
+      {
+         DeleteTimer(ptUnboundEnergy);
+         ptUnboundEnergy = CreateTimer(self,@UnboundEnergyTimer,
+                                 Send(SETTINGS_OBJECT,@GetUnboundDelay));
+      }
+
+      Send(self,@DrawUnboundEnergy);
+
+      return;
    }
 
    NewHealth()
@@ -7508,6 +7648,11 @@ messages:
    GetRawMysticism()
    {
       return bound(piMysticism,1,50);
+   }
+
+   GetRawStatisticsTotal()
+   {
+      return piMight + piIntellect + piAgility + piAim + piStamina + piMysticism;
    }
 
    GetKarma()
@@ -8823,7 +8968,7 @@ messages:
    "stamina, all the way down to half for those with high staminas."
    {
       local i, iMaxHealth, dodgeskill, oSkill, monster_level, iXP, oWeapon,
-            iItemBonus;
+            iItemBonus, iUnbound, iDist, iDifference;
 
       iXP = 0;
       iItemBonus = 0;
@@ -8919,7 +9064,7 @@ messages:
 
             // Add stamina modifier here.
             // 1// bonus for 1 stamina, 70// bonus for 70 stamina.
-            iXP = iXP + iXP * Send(self,@GetStamina) / 100;
+            iXP += iXP * Send(self,@GetStamina) / 100;
          }
          else if (monster_level + 5) > iMaxHealth
                AND IsClass(what,&Monster) AND killing_blow
@@ -8954,7 +9099,7 @@ messages:
 
          if Send(what,@GetBoostedLevel) > 0
          {
-            iXP = iXP + (Send(what,@GetBoostedLevel)
+            iXP += (Send(what,@GetBoostedLevel)
                  * Send(Send(SYS,@GetSurvivalRoomMaintenance),@GetSurvivalXP));
          }
 
@@ -8963,15 +9108,46 @@ messages:
          if piMax_health > iMaxHealth * 2
             AND monster_level < piMax_health
          {
-            iXP = iXP / 2;
+            iXP /= 2;
          }
 
          iXP = iXP * Bound(Send(SETTINGS_OBJECT,@GetXPPercent),50,500) / 100;
          // Add in XP bonus from items after this.
-         iXP = iXP + iItemBonus;
+         iXP += iItemBonus;
          // AddXP checks for HP gain and redraws the XP bar.
          // NOTE: iMaxHealth could be wrong after this point.
          Send(self,@AddXP,#iAmount=iXP);
+
+         // Also grant unbound energy for your own kills.
+         // Unbound energy allows free spell casts.
+         if IsClass(what,&Monster) AND killing_blow
+         {
+            // Let's figure the amount, mostly based on monster level.
+            iUnbound = monster_level * Send(SETTINGS_OBJECT,@GetUnboundAbsorption)
+               * (Random(30,80) + (Send(self,@GetMysticism) * 2 / 5)) / 10000;
+
+            // Scale with distance to victim.
+            iDist = Bound(Send(self,@SquaredFineDistanceTo3D,#what=what),1,$);
+            // 36864 is 3 range in fine units, cf. SquaredFineDistanceTo3D.
+            iUnbound = Bound(iUnbound * 36864 / iDist,$,iUnbound);
+
+            // Scale with player level.
+            iDifference = piMax_health - monster_level;
+            if iDifference > 10
+            {
+               iUnbound = Bound(iUnbound * 100 / (iDifference * iDifference),$,iUnbound);
+            }
+
+            // Grant only one fourth of the energy if the mob didn't attack the player.
+            if ((piFlags & PFLAG_TOOK_DAMAGE) OR (piFlags & PFLAG_DODGED))
+            {
+               Send(self,@AddUnboundEnergy,#iAmount=iUnbound);
+            }
+            else
+            {
+               Send(self,@AddUnboundEnergy,#iAmount=iUnbound / 4);
+            }
+         }
 
          // Here, we work out if the player deserves a training point.
          // They qualify if they got at least one gain point from the monster,
@@ -9168,6 +9344,41 @@ messages:
       return;
    }
 
+   AddUnboundEnergy(iAmount=0,report=TRUE)
+   {
+      // Add to total. Check reasonable limits first. You can't lose
+      // more points than you have and you can't get more points than
+      // you need to reach the cap.
+      iAmount = Bound(iAmount,-piUnbound_energy,Send(SETTINGS_OBJECT,@GetUnboundMax) - piUnbound_energy);
+      piUnbound_energy += iAmount;
+
+      if (pbLogged_on AND report)
+      {
+         if iAmount > 0
+         {
+            Send(self,@MsgSendUser,#message_rsc=player_unbound_energy_gained,
+                  #parm1=iAmount);
+         }
+         else if iAmount < 0
+         {
+            Send(self,@MsgSendUser,#message_rsc=player_unbound_energy_lost,
+                  #parm1=-iAmount);
+         }
+      }
+
+      // Only delay decay if we gain points.
+      if iAmount > 0
+      {
+         Send(self,@NewUnboundEnergy,#bDelay=TRUE);
+      }
+      else
+      {
+         Send(self,@NewUnboundEnergy,#bDelay=FALSE);
+      }
+
+      return;
+   }
+
    GetXPRemainingForNextLevel()
    {
       // Use raw base max health here, can go higher than 150.
@@ -9199,6 +9410,17 @@ messages:
    GetTrainingPoints()
    {
       return piTraining_points;
+   }
+
+   GetUnboundEnergy()
+   {
+      return piUnbound_energy;
+   }
+
+   // Returns true if the last spell cast was a free cast.
+   GetFreeCast()
+   {
+      return pbFree_cast;
    }
 
    AddTrainingPoints(points=0,report=TRUE,bCap=TRUE)
@@ -14700,7 +14922,7 @@ messages:
    }
 
    // This section deals with minion code.
-   CommandMinionAttack(oMaster=$,oTarget=$)
+   CommandMinionAttack(oTarget=$)
    {
       local oActive;
 
@@ -14708,6 +14930,7 @@ messages:
       // not items or anything else that can damage us.
       if plControlledMinions = $
          OR oTarget = $
+         OR oTarget = self
          OR NOT IsClass(oTarget,&Battler)
          OR IsClass(oTarget,&Revenant)
       {
@@ -14718,6 +14941,15 @@ messages:
       // a minion under our control.
       if IsClass(oTarget,&Monster)
          AND Send(oTarget,@GetMaster) = self
+      {
+         return;
+      }
+
+      // Check here for phase/spectate, as calling AllowBattlerAttack with
+      // actual=FALSE will bypass that check for accurate minimap dots.
+      // It is unlikely we still even have minions if phased, but better to
+      // be safe here.
+      if (Send(self,@IsInCannotInteractMode))
       {
          return;
       }
@@ -14791,6 +15023,13 @@ messages:
    StartPhaseTimer()
    {
       local i;
+
+      // If phase time regen timer is active, delete it.
+      if (ptPhaseRegenTimer <> $)
+      {
+         DeleteTimer(ptPhaseRegenTimer);
+         ptPhaseRegenTimer = $;
+      }
 
       if ptPhaseTimer = $
       {
@@ -14874,6 +15113,44 @@ messages:
       {
          piTimeAttackedPlayer = piTimeAttackedPlayer
                                  - (Send(self,@GetRemainingPhaseTime) / 1000);
+      }
+
+      // Possibly start phase time regen.
+      if (ptPhaseRegenTimer <> $)
+      {
+         DeleteTimer(ptPhaseRegenTimer);
+      }
+      // 5 sec delay so phasing in/out doesn't regen time.
+      ptPhaseRegenTimer = CreateTimer(self,@RegenPhaseTime,5000);
+
+      return;
+   }
+
+   RegenPhaseTime(timer = $)
+   {
+      local iBaseTime;
+
+      if (ptPhaseRegenTimer <> timer)
+      {
+         DeleteTimer(ptPhaseRegenTimer);
+      }
+      ptPhaseRegenTimer = $;
+
+      if (Send(self,@IsInCannotInteractMode)
+         OR NOT pbLogged_on)
+      {
+         return;
+      }
+
+      iBaseTime = Send(self,@GetBasePhaseTime);
+
+      // Add time in 3 second increments to reduce timers needed.
+      piRemainingPhaseTime = Bound(piRemainingPhaseTime + 3000,0,iBaseTime);
+
+      // Make another timer if we are still regenerating phase time.
+      if (piRemainingPhaseTime < iBaseTime)
+      {
+         ptPhaseRegenTimer = CreateTimer(self,@RegenPhaseTime,3000);
       }
 
       return;

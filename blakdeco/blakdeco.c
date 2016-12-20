@@ -541,8 +541,7 @@ char * name_function(int fnum)
    case GETRANDOMPOINTBSP: return "GetRandomPointBSP";
    case GETSTEPTOWARDSBSP: return "GetStepTowardsBSP";
 
-   case MINIGAMENUMBERTOSTRING : return "MiniGameNumberToString";
-   case MINIGAMESTRINGTONUMBER : return "MiniGameStringToNumber";
+   case STRINGTONUMBER : return "StringToNumber";
 
    case CANMOVEINROOMBSP: return "CanMoveInRoomBSP";
 
@@ -558,6 +557,7 @@ char * name_function(int fnum)
    case SETFIRST : return "SetFirst";
    case SETNTH : return "SetNth";
    case DELLISTELEM : return "DelListElem";
+   case DELLASTLISTELEM: return "DelLastListElem";
    case FINDLISTELEM : return "FindListElem";
    case SWAPLISTELEM : return "SwapListElem";
    case INSERTLISTELEM : return "InsertListElem";

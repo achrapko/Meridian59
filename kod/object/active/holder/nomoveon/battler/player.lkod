@@ -108,6 +108,10 @@ player_logon_bonus = de \
    "Komm morgen wieder, um mehr davon zu bekommen!"
 player_experience_gained = de "Du hast ~B~s%i~v~B XP erhalten."
 player_experience_lost = de "Du hast ~B~r%i~B~v XP verloren!"
+player_unbound_energy_gained = de "Du absorbierst ~B~t%i~v~B ungebundene Energie "
+      "von Deinem gefallenen Gegner."
+player_unbound_energy_lost = de "Du kanalisierst ~B~t%i~v~B ungebundene Energie "
+      "um deinen Zauberspruch zu formen."
 player_health_gain_maxed = de \
    "Deine Lebensenergie kann sich nicht weiter erhöhen."
 player_cant_hit_optout = de \
@@ -344,8 +348,14 @@ player_tutorial_mail = de \
    "- sie hilft zu bestimmen, wie schnell Deine Lebenskraft und magische "
    "Energie wiederkehren- bei einem müden Krieger verflüchtigen sie sich "
    "schnell. Die Ausdauer kehrt durch eine Rast oder ein herzhaftes Mahl "
-   "zurück.Ich gratuliere Dir zu Deinem jüngsten Erfolg. Ich weiß, die Barden "
-   "werden Deine künftigen Taten besingen.\n -- Dein Schutzengel"
+   "zurück.\nSobald Du 50 Lebenspunkte erreichst werde ich Dich nicht mehr vor "
+   "Kämpfen mit anderen Spielern beschützen können. Solltest Du danach nicht "
+   "an Spieler-gegen-Spieler Kämpfen teilnehmen wollen kannst Du jedoch den "
+   "Tempel von Shal'ille nördlich der Stadt Marion besuchen um der Gewalt "
+   "gegen und durch andere Mitspieler für immer abzuschwören. Folge dazu "
+   "einfach den Anweisungen auf dem dortigen Hinweisschild.\nIch gratuliere "
+   "Dir zu Deinem jüngsten Erfolg. Ich weiß, die Barden werden Deine "
+   "künftigen Taten besingen.\n -- Dein Schutzengel"
 player_first_mail = de \
    "Betreff: Willkommen zu Meridian 59!\n Wir hoffen, Du genießt die aufregende "
    "Welt, die auf Dich wartet!\nDu hast eine Online-Gemeinschaft betreten, "

@@ -153,6 +153,7 @@ resources:
    user_stat_defense = "Defense"
    user_stat_armor = "Armor"
    user_stat_training = "Training Pts"
+   user_stat_unbound_energy = "Unbound Energy"
 
    user_resist_magic = "Magic Resist"
    user_resist_fire = "Fire Resist"
@@ -3263,18 +3264,18 @@ messages:
             {
                if poGuild = oOtherGuild
                {
-                  iFlags = (iFlags | MM_PLAYER_IS_GUILDMATE);
+                  iFlags |= MM_PLAYER_IS_GUILDMATE;
                }
 
                if Send(poGuild,@IsAlly,#otherguild=oOtherGuild)
                   AND Send(oOtherGuild,@IsAlly,#otherguild=poGuild)
                {
-                  iFlags = (iFlags | MM_PLAYER_IS_FRIEND);
+                  iFlags |= MM_PLAYER_IS_FRIEND;
                }
 
                if Send(poGuild,@IsMutualEnemy,#otherguild=oOtherGuild)
                {
-                  iFlags = (iFlags | MM_PLAYER_IS_ENEMY);
+                  iFlags |= MM_PLAYER_IS_ENEMY;
                }
             }
 
@@ -3283,18 +3284,18 @@ messages:
                AND Send(self,@AllowBattlerAttack,#victim=what,
                         #report=FALSE,#actual=FALSE)
             {
-               iFlags = (iFlags | MM_PLAYER_IS_ENEMY);
+               iFlags |= MM_PLAYER_IS_ENEMY;
             }
 
             // Add builder group halo.
             if Send(poOwner,@AreGroupedHere,#who=self,#what=what)
             {
-               iFlags = (iFlags | MM_BUILDER_GROUP);
+               iFlags |= MM_BUILDER_GROUP;
             }
          }
          else
          {
-            iFlags = (iFlags | MM_MONSTER);
+            iFlags |= MM_MONSTER;
          }
       }
 
@@ -3572,7 +3573,7 @@ messages:
 
       if group = 2
       {
-         AddPacket(1,BP_STAT_GROUP, 1,group, 1,26);
+         AddPacket(1,BP_STAT_GROUP, 1,group, 1,27);
 
          Send(self,@SendStatMight);
          Send(self,@SendStatIntellect);
@@ -3597,6 +3598,8 @@ messages:
                   #lCurrentResistances=lCurrentResistances);
             ++i;
          }
+
+         Send(self,@SendStatUnboundEnergy);
 
          SendPacket(poSession);
 
@@ -6517,7 +6520,7 @@ messages:
 
    UserCast(oSpell=$,lTargets=$)
    {
-      local i, bFound, iSpell, iSpellNum, iSpellPower, lFinalTargets;
+      local i, bFound, iSpell, iSpellNum, iSpellPower, lFinalTargets, iCost;
 
       // Check for valid spell first. This is mainly an issue during
       // system saves where a user might cast something with the wrong
@@ -6532,7 +6535,7 @@ messages:
       if lTargets <> $
          AND IsClass(oSpell,&AttackSpell)
       {
-         Send(self,@CommandMinionAttack,#oMaster=self,#oTarget=First(lTargets));
+         Send(self,@CommandMinionAttack,#oTarget=First(lTargets));
       }
 
       // User took an action!  Wake any AIs in the room to the user's presence!
@@ -6587,22 +6590,42 @@ messages:
          return;
       }
 
+      iCost = Send(oSpell,@GetMeditateRatio);
+
+      // Check if it's a free cast.
+      pbFree_cast = (iCost <= Send(self,@GetUnboundEnergy)
+                     AND iCost > 0
+                     AND send(oSpell,@IsFreeCastable));
+
       // Get the spell power
       iSpellPower = Send(oSpell,@GetSpellPower,#who=self);
 
+      // Free casts get a bonus.
+      if pbFree_cast
+      {
+         iSpellPower = Bound(iSpellPower + 20,SPELLPOWER_MINIMUM,SPELLPOWER_MAXIMUM);
+      }
+
       // First make sure user has enough magic points, reagents, etc.
       if NOT Send(oSpell,@CanPayCosts,#who=self,#lTargets=lFinalTargets,
-                  #iSpellpower=iSpellpower)
+                  #iSpellpower=iSpellpower,#bFreeCast=pbFree_cast)
       {
          // Player failed some sort of internal check
          return;
       }
 
       if Send(oSpell,@PayCosts,#who=self,#iSpellPower=iSpellPower,
-              #lTargets=lFinalTargets)
+               #lTargets=lFinalTargets,#bFreeCast=pbFree_cast)
       {
+         // If we had a free cast, deduct points from our unbound energy.
+         if pbFree_cast
+         {
+            Send(self,@AddUnboundEnergy,#iAmount=-iCost);
+         }
+
+         // Alright, cast that spell already.
          Send(oSpell,@BeginCastingTrance,#who=self,#lTargets=lFinalTargets,
-              #iSpellPower=iSpellPower);
+               #iSpellPower=iSpellPower);
       }
 
       return;
@@ -8003,6 +8026,10 @@ messages:
          piLastSafeRoom = Send(self,@GetHomeRoom);
       }
 
+      // Draw defense to handle buffs that change
+      // based on room (e.g. shadow form).
+      Send(self,@DrawDefense);
+
       propagate;
    }
 
@@ -9262,6 +9289,30 @@ messages:
          Send(self,@SendStatXP);
          SendPacket(poSession);
       }
+
+      return;
+   }
+
+   DrawUnboundEnergy()
+   {
+      if pbLogged_on
+      {
+         AddPacket(1,BP_STAT,1,2);
+         Send(self,@SendStatUnboundEnergy);
+         SendPacket(poSession);
+      }
+
+      return;
+   }
+
+   SendStatUnboundEnergy()
+   {
+      local iPoints;
+
+      iPoints = Send(self,@GetUnboundEnergy);
+
+      AddPacket(1,27, 4,user_stat_unbound_energy, 1,STAT_VALUE, 1,STAT_INTEGER,
+                4,iPoints, 4,0, 4,Send(SETTINGS_OBJECT,@GetUnboundMax), 4,iPoints);
 
       return;
    }

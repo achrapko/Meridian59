@@ -216,6 +216,7 @@ void InitBkodInterpret(void)
    ccall_table[SWAPLISTELEM] = C_SwapListElem;
    ccall_table[INSERTLISTELEM] = C_InsertListElem;
    ccall_table[DELLISTELEM] = C_DelListElem;
+   ccall_table[DELLASTLISTELEM] = C_DelLastListElem;
    ccall_table[FINDLISTELEM] = C_FindListElem;
    ccall_table[ISLISTMATCH] = C_IsListMatch;
    ccall_table[GETLISTELEMBYCLASS] = C_GetListElemByClass;
@@ -249,8 +250,7 @@ void InitBkodInterpret(void)
    ccall_table[BOUND] = C_Bound;
    ccall_table[SQRT] = C_Sqrt;
 
-   ccall_table[MINIGAMENUMBERTOSTRING] = C_MinigameNumberToString;
-   ccall_table[MINIGAMESTRINGTONUMBER] = C_MinigameStringToNumber;
+   ccall_table[STRINGTONUMBER] = C_StringToNumber;
 }
 
 kod_statistics * GetKodStats()

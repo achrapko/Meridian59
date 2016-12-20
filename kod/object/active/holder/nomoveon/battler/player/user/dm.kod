@@ -13,6 +13,7 @@ DM is User
 constants:
 
    include blakston.khd
+   include protocol.khd
 
    // These two constants were stolen from player, should be synchronized.
    DM_TRANSLATION_BODY_MASK = 0xff00
@@ -101,6 +102,12 @@ resources:
    dm_plain_command = "plain"
    dm_mortal_command = "mortal"
    dm_immortal_command = "immortal"
+   dm_diceroll_command = "dice roll"
+   dm_diceroll_display = \
+      "~k%s%s rolls the dice from ~b%i ~kto ~b%i ~kand gets ~b~B%i~k~B!"
+   dm_diceroll_usage = \
+      "To roll the dice you must use two numbers separated by a comma, e.g. "
+      "1, 6."
 
    dm_currently_in = "The ROO for `b%s`n is `k`B%s`n.  The room number is %i."
    dm_currently_at = \
@@ -130,6 +137,19 @@ resources:
    dm_hidden_command = "hidden"
    dm_blank_command = "blank"
 
+   dm_detect_invis = "detect invis"
+   dm_detect_invis_list = "list"
+   dm_detect_invis_list_header = \
+      "Players enchanted by greater detect invisible: %q"
+   dm_detect_invis_list_none = \
+      "No players enchanted by greater detect invisible."
+   dm_detect_invis_remove = "remove"
+   dm_user_not_found = "Could not lookup user %q."
+   dm_detect_invis_removed = "Removed greater DI enchantment from %q."
+
+   dm_detect_invis_no_rmv = \
+      "User %q doesn't appear to be enchanted with greater DI."
+
    // NOTE: if an internationalised string is added for dm_place_command,
    // then all the items that can be placed need to be changed also.
    dm_place_command = "place"
@@ -155,6 +175,7 @@ resources:
    dm_no_item = "No item with that name exists in the Meridian universe."
    dm_no_monster = "No monster with that name exists in the Meridian universe."
    dm_no_item_group = "There is no item group with that name."
+   dmplace_not_found = "Unable to find item to place."
    dm_q = "Q"
 
    dm_gone_mortal = "%s appears more vulnerable."
@@ -191,6 +212,11 @@ resources:
       "\nUse ~bdm event sign~n to create an event sign at your location.\n"
       "Use ~bdm get roo~n to get the filename and number of the current room, "
       "and ~bdm get coords~n to get your current coordinates.\n"
+      "~cNew! ~nUse ~bdm detect invis list ~nto show players enchanted with the "
+      "DM detect invisible spell, and ~bdm detect invis remove ~rplayername "
+      "~nto remove the enchantment from a player.\n"
+      "~cNew! ~nUse ~bdm dice roll n, m ~nto pick a random number between "
+      "'n' and 'm'.\n"
       "You can place scenery and lights using the ~bdm place~n command.\n"
       "Type ~bdm help lights~n and ~bdm help scenery~n to get a list of "
       "available objects to place.\nYou can also send custom messages to users "
@@ -269,7 +295,8 @@ resources:
       "pine tree, elm tree, spider tree, fey tree, bush (low res), shrub, "
       "raza shrub, vine tree, kichan tree, kriipa tree, oak tree, "
       "spine vine (Brax tree), necro vine, rock1, rock2, rock3, rock4, rock5, "
-      "rock 6, stalagmite1, stalagmite2, stool, barstool and table."
+      "rock 6, stalagmite1, stalagmite2, stool, barstool, table, snowman, "
+      "small qormas tree, big qormas tree and wreath."
 
    dm_dontinterfere = "~B~gYou should not try to interfere with the game."
 
@@ -351,6 +378,10 @@ properties:
 
    // What's this DM's "standard" icon? Nil means it's human.
    prStandardIcon = $
+
+   pbSetLowRoll = FALSE
+   piLowRoll = 0
+   piHighRoll = 0
 
 messages:
 
@@ -943,6 +974,13 @@ messages:
          return;
       }
 
+      if (StringContain(string,dm_diceroll_command))
+      {
+         Send(self,@DMSayDiceRoll,#string=string);
+
+         return;
+      }
+
       // Code for placing light items, all DMs can use.
       if StringContain(string,dm_place_command)
       {
@@ -981,6 +1019,13 @@ messages:
 
             return;
          }
+      }
+
+      if (StringContain(string,dm_detect_invis))
+      {
+         Send(self,@DMSayDetectInvis,#string=string);
+
+         return;
       }
 
       if (StringEqual(string,dm_rumble_command))
@@ -1465,6 +1510,86 @@ messages:
 
 #region DM Say Command Handling
 
+   DMSayDetectInvis(string=$)
+   {
+      local i, iCount, oSpell, lEnchanted, oUser;
+
+      // Remove initial command part.
+      StringSubstitute(string,dm_detect_invis,"");
+
+      oSpell = Send(SYS,@FindSpellByNum,#num=SID_DM_DETECT_INVISIBLE);
+
+      // Get list of players enchanted with the DM DI spell.
+      lEnchanted = Send(oSpell,@GetEnchantedPlayers);
+
+      // Print list of enchanted players.
+      if (StringEqual(string,dm_detect_invis_list))
+      {
+         iCount = Length(lEnchanted);
+
+         if (iCount = 0)
+         {
+            Send(self,@MsgSendUser,#message_rsc=dm_detect_invis_list_none);
+
+            return;
+         }
+
+         ClearTempString();
+
+         foreach i in lEnchanted
+         {
+            AppendTempString(Send(i,@GetTrueName));
+            if (--iCount > 0)
+            {
+               AppendTempString(", ");
+            }
+            else
+            {
+               AppendTempString(".");
+            }
+         }
+         Send(self,@MsgSendUser,#message_rsc=dm_detect_invis_list_header,
+               #parm1=GetTempString());
+
+         return;
+      }
+
+      // Remove enchantment from a player.
+      if (StringContain(string,dm_detect_invis_remove))
+      {
+         // Remove command part.
+         StringSubstitute(string,dm_detect_invis_remove,"");
+
+         // Lookup player by name so we can use the object ID for comparison.
+         oUser = Send(SYS,@FindUserByString,#string=string);
+         if (oUser = $)
+         {
+            Send(self,@MsgSendUser,#message_rsc=dm_user_not_found,#parm1=string);
+
+            return;
+         }
+
+         // Remove enchantment from user.
+         foreach i in lEnchanted
+         {
+            if (i = oUser)
+            {
+               Send(i,@RemoveEnchantment,#what=oSpell);
+               Send(self,@MsgSendUser,#message_rsc=dm_detect_invis_removed,
+                     #parm1=Send(oUser,@GetTrueName),#type1=STRING_RESOURCE);
+
+               return;
+            }
+         }
+
+         // If we get here, user wasn't in enchantment list.
+         Send(self,@MsgSendUser,#message_rsc=dm_detect_invis_no_rmv,
+               #parm1=Send(oUser,@GetTrueName),#type1=STRING_RESOURCE);
+      }
+
+      return;
+   }
+
    DMSayHelp(string=$)
    "Return TRUE if handled here, FALSE otherwise."
    {
@@ -1572,244 +1697,272 @@ messages:
       return FALSE;
    }
 
-   DMSayPlaceObject(string=$)
+   DMSayDiceRoll(string = $)
    {
-      local bItemFound, oObject;
+      local iRoll;
 
       if (string = $)
       {
          return;
       }
 
-      bItemFound = FALSE;
+      // Remove command part.
+      StringSubstitute(string,dm_diceroll_command,"");
+      // Parse out the numbers (save in properties).
+      ParseString(string,",",@DMParseDiceRoll);
+
+      if (piLowRoll <> $
+         AND piHighRoll <> $
+         AND piLowRoll < piHighRoll)
+      {
+         iRoll = Random(piLowRoll,piHighRoll);
+
+         Send(poOwner,@SomeoneSaid,#what=self,#type=SAY_MESSAGE,
+               #string=dm_diceroll_display,#parm1=Send(self,@GetCapDef),
+               #parm2=Send(self,@GetName),#parm3=piLowRoll,#parm4=piHighRoll,
+               #parm5=iRoll);
+      }
+      else
+      {
+         Send(self,@MsgSendUser,#message_rsc=dm_diceroll_usage);
+      }
+
+      // Reset data.
+      pbSetLowRoll = FALSE;
+      piLowRoll = 0;
+      piHighRoll = 0;
+
+      return;
+   }
+
+   DMParseDiceRoll(string = $)
+   "Called only by ParseString from DMSayDiceRoll, sets two properties with "
+   "numbers corresponding to the min/max of a random roll."
+   {
+      if (pbSetLowRoll)
+      {
+         piHighRoll = StringToNumber(string);
+      }
+      else
+      {
+         piLowRoll = StringToNumber(string);
+         pbSetLowRoll = TRUE;
+      }
+
+      return;
+   }
+
+   DMSayPlaceObject(string=$)
+   {
+      local oObject;
+
+      if (string = $)
+      {
+         return;
+      }
 
       if StringEqual(string,dm_create_dynamic_light_command)
       {
          oObject = Create(&DynamicLight,#bVisible=TRUE);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place lamp")
+      else if StringContain(string,"place lamp")
       {
          oObject = Create(&Lamp);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place brazierswitch")
+      else if StringContain(string,"place brazierswitch")
       {
          oObject = Create(&BrazierSwitch);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place brazier")
+      else if StringContain(string,"place brazier")
       {
          oObject = Create(&Brazier);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place candelabra")
+      else if StringContain(string,"place candelabra")
       {
          oObject = Create(&Candelabra);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place candle")
+      else if StringContain(string,"place candle")
       {
          oObject = Create(&Candle);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place firepit")
+      else if StringContain(string,"place firepit")
       {
          oObject = Create(&Firepit);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place glowtree")
+      else if StringContain(string,"place glowtree")
       {
          oObject = Create(&GlowTree);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place kocatan brazier")
+      else if StringContain(string,"place kocatan brazier")
       {
          oObject = Create(&KocatanBrazier);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place kocatan lamp")
+      else if StringContain(string,"place kocatan lamp")
       {
          oObject = Create(&KocatanLamp);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place orc torch")
+      else if StringContain(string,"place orc torch")
       {
          oObject = Create(&OrcTorch);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place skull brazier")
+      else if StringContain(string,"place skull brazier")
       {
          oObject = Create(&SkullBrazier);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place smoke")
+      else if StringContain(string,"place smoke")
       {
          oObject = Create(&SmokeColumn);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place table lamp")
+      else if StringContain(string,"place table lamp")
       {
          oObject = Create(&TableLamp);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place lantern")
+      else if StringContain(string,"place lantern")
       {
          oObject = Create(&OrnamentalObject,#type=OO_LANTERN);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place jasper lantern1")
+      else if StringContain(string,"place jasper lantern1")
       {
          oObject = Create(&OrnamentalObject,#type=OO_JASPERLAMP1);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place jasper lantern")
+      else if StringContain(string,"place jasper lantern")
       {
          oObject = Create(&OrnamentalObject,#type=OO_JASPERLAMP);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place tree")
+      else if StringContain(string,"place tree")
       {
          oObject = Create(&Tree);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place pine tree")
+      else if StringContain(string,"place pine tree")
       {
          oObject = Create(&Tree,#bottom=TREE_PINE);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place elm tree")
+      else if StringContain(string,"place elm tree")
       {
          oObject = Create(&Tree,#bottom=TREE_ELM);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place raza tree")
+      else if StringContain(string,"place raza tree")
       {
          oObject = Create(&OrnamentalObject,#type=OO_RAZA_TREE1);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place dead tree")
+      else if StringContain(string,"place dead tree")
       {
          oObject = Create(&OrnamentalObject,#type=OO_DEADTREE);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place vine tree")
+      else if StringContain(string,"place vine tree")
       {
          oObject = Create(&OrnamentalObject,#type=OO_TREE1);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place kichan tree")
+      else if StringContain(string,"place kichan tree")
       {
          oObject = Create(&OrnamentalObject,#type=OO_TREE2);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place kriipa tree")
+      else if StringContain(string,"place kriipa tree")
       {
          oObject = Create(&OrnamentalObject,#type=OO_TREE3);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place gnarlwood tree")
+      else if StringContain(string,"place gnarlwood tree")
       {
          oObject = Create(&OrnamentalObject,#type=OO_NECTREE1);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place oak tree")
+      else if StringContain(string,"place oak tree")
       {
          oObject = Create(&OrnamentalObject,#type=OO_NECTREE2);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place spine vine")
+      else if StringContain(string,"place spine vine")
       {
          oObject = Create(&OrnamentalObject,#type=OO_NECTREE4);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place raza shrub")
+      else if StringContain(string,"place raza shrub")
       {
          oObject = Create(&OrnamentalObject,#type=OO_RAZA_SHRUB);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place necro vine")
+      else if StringContain(string,"place necro vine")
       {
          oObject = Create(&OrnamentalObject,#type=OO_NECVINE1);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place spider tree")
+      else if StringContain(string,"place spider tree")
       {
          oObject = Create(&SingleTree);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place fey tree")
+      else if StringContain(string,"place fey tree")
       {
          oObject = Create(&FeyTree);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place bush")
+      else if StringContain(string,"place bush")
       {
          oObject = Create(&TallBush);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place shrub")
+      else if StringContain(string,"place shrub")
       {
          oObject = Create(&Shrub);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place stool")
+      else if StringContain(string,"place stool")
       {
          oObject = Create(&Stool);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place barstool")
+      else if StringContain(string,"place barstool")
       {
          oObject = Create(&BarStool);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place table")
+      else if StringContain(string,"place table")
       {
          oObject = Create(&Table);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place rock1")
+      else if StringContain(string,"place rock1")
       {
          oObject = Create(&OrnamentalObject,#type=OO_ROCK1);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place rock2")
+      else if StringContain(string,"place rock2")
       {
          oObject = Create(&OrnamentalObject,#type=OO_ROCK2);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place rock3")
+      else if StringContain(string,"place rock3")
       {
          oObject = Create(&OrnamentalObject,#type=OO_ROCK3);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place rock4")
+      else if StringContain(string,"place rock4")
       {
          oObject = Create(&OrnamentalObject,#type=OO_ROCKB);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place rock5")
+      else if StringContain(string,"place rock5")
       {
          oObject = Create(&OrnamentalObject,#type=OO_ROCKC);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place rock6")
+      else if StringContain(string,"place rock6")
       {
          oObject = Create(&OrnamentalObject,#type=OO_NECROCK);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place stalagmite1")
+      else if StringContain(string,"place stalagmite1")
       {
          oObject = Create(&OrnamentalObject,#type=OO_STALACTITE1);
-         bItemFound = TRUE;
       }
-      if NOT bItemFound AND StringContain(string,"place stalagmite2")
+      else if StringContain(string,"place stalagmite2")
       {
          oObject = Create(&OrnamentalObject,#type=OO_STALACTITE2);
-         bItemFound = TRUE;
+      }
+      else if StringContain(string,"place small qormas tree")
+      {
+         oObject = Create(&OrnamentalObject,#type=OO_QORMAS_TREE);
+      }
+      else if StringContain(string,"place big qormas tree")
+      {
+         oObject = Create(&OrnamentalObject,#type=OO_QORMAS_TREE_BIG);
+      }
+      else if StringContain(string,"place snowman")
+      {
+         oObject = Create(&OrnamentalObject,#type=OO_QORMAS_SNOWMAN);
+      }
+      else if StringContain(string,"place wreath")
+      {
+         oObject = Create(&OrnamentalObject,#type=OO_QORMAS_WREATH);
       }
 
-      if oObject <> $
+      if oObject = $
+      {
+         Send(self,@MsgSendUser,#message_rsc=dmplace_not_found);
+      }
+      else
       {
          Send(poOwner,@NewHold,#what=oObject,#new_row=piRow,#new_col=piCol,
                #fine_row=piFine_row,#fine_col=piFine_col);
