@@ -10090,25 +10090,6 @@ messages:
       return FALSE;
    }
 
-   InitialSetBaseMaxHealth()
-   {
-      local i;
-      
-      foreach i in plUsing
-      {
-         if Send(i,@AdjustsMaxHealth)
-         {
-           Send(self,@TryUnuseItem,#what=i);
-           Send(self,@MsgSendUser,#message_rsc=user_fumble,
-                #parm1=Send(i,@GetName));
-         }
-      }
-
-      piBase_Max_health = piMax_health;
-
-      return;
-   }
-
    FixMoney(amount = 50000)
    {
       local oMoney,num;
@@ -10960,7 +10941,7 @@ messages:
          }
          else if (iPrimaryStat = STAT_ID_MYSTICISM)
          {
-            if (iSpellAbility > (piMysticism * 2)) AND (mysticism < piMysticism)
+            if (iSpellAbility > (mysticism * 2)) AND (mysticism < piMysticism)
                OR (iSpellAbility = 99 AND piMysticism = 50 AND mysticism < 50)
             {
                Send(self,@ChangeSpellAbility,#spell_num=iSpellNum,
