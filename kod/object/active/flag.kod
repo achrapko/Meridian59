@@ -94,6 +94,23 @@ resources:
       "to a territory which is adjacent to a territory which has already "
       "been claimed for that faction."
 
+
+   flag_reinforcements_scouts = \
+      "~I%s has sent scouts to assess the invading forces."
+   flag_reinforcements_troops = \
+      "~I%s has sent troops to kill you."
+   flag_reinforcements_advancedTroops = \
+      "~I%s has sent advanced troops to Really kill you."
+   flag_reinforcements_champion = \
+      "~I%s has sent their best guy."
+
+   //Use this site to find good descriptions
+   //http://www.macmillandictionary.com/us/thesaurus-category/american/groups-of-soldiers
+   //http://www.macmillandictionary.com/us/thesaurus-category/american/soldiers-in-the-past
+   //Jonas - focus on guerilla/rebel style terms
+   //Duke - focus on some sort of Archmage for the Champion
+   //Cess - focus on Royal guard / shining knight stuff
+
 classvars:
 
    vrName = flag_name_rsc
@@ -110,6 +127,9 @@ properties:
    poClaimer = $
    ptClaimAttempt = $
    ptNextAllowedAttempt = $
+
+   piReinforcementsWave = 0
+   ptSendReinforcements = $
 
    piGen_time = 20000
    ptGenerateTroops = $
@@ -161,6 +181,11 @@ messages:
       ptNextAllowedAttempt = CreateTimer(self,@NextAllowedAttempt,
                                  Send(oTerritoryGame,@GetClaimRetry)*60000);
 
+      //Split event into thirds - we want to send the first wave pretty quick;
+      piReinforcementsWave = 0;
+	  Debug("~~~GeneratingReinforcements~~~");
+      ptSendReinforcements = CreateTimer(self,@GenerateReinforcements,2000);
+
       // System message:  Aphasia stakes a claim to The Twisted Woods in the name of the rebels!
       foreach i in Send(SYS,@GetUsersLoggedOn)
       {
@@ -192,6 +217,9 @@ messages:
             }
          }
       }
+      
+      // Generate Scouts from adjacent owned territory
+      
 
       return TRUE;
    }
@@ -456,6 +484,8 @@ messages:
       }
 
       poClaimer = $;
+      piReinforcementsWave = 0;
+      ptSendReinforcements = $;
 
       // Slow down troop generation again.
       piGen_time = Send(Send(SYS,@GetTerritoryGame),@GetNonclaimTroopGenTime);
@@ -493,10 +523,26 @@ messages:
 
    SomethingLeft(what=$)
    {
+      local i, oTroop;
+      
       if (what <> $) AND (what = poClaimer)
       {
          Send(self,@ClaimFailed);
       }
+      
+      //Check if we need to remove troops from defending AlliesInNeed
+      // foreach i in Send(Send(self,@GetOwner),@GetHolderActive)
+      // {
+         // oTroop = First(i);
+         // if IsClass(oTroop,&FactionTroop)
+            // AND (Send(oTroop,@GetFaction) <> Send(poClaimer,@GetFaction))
+         // {
+            // if Send(oTroop,@GetMaster) = what
+            // {
+               // Send(oTroop,@SetMaster,#oMaster=$);
+            // }
+         // }
+      // }
 
       propagate;
    }
@@ -597,6 +643,8 @@ messages:
       }
 
       poClaimer = $;
+      piReinforcementsWave = 0;
+      ptSendReinforcements = $;
 
       // Slow down troop generation again.
       piGen_time = Send(Send(SYS,@GetTerritoryGame),@GetNonclaimTroopGenTime);
@@ -930,6 +978,323 @@ messages:
 
       return;
    }
+   
+   GenerateReinforcements()
+   "Creates FactionTroops, at an edge exit, to defend against a ClaimAttempt"
+   {
+      local i, j, iGenRow, iGenCol, lAdjTerritory, oTerritoryGame, AdjacentRID,
+         oFlagpole, oTroop1, oTroop2, oTroop3, oTroop4, oChampion, oAdjacentRoom;
+      
+      //Sanity check- make sure a flag is actually being attacked
+      if ptClaimAttempt = $
+      {
+         ptSendReinforcements = $;
+         return;
+      }
+      
+      iGenRow = 0;
+      iGenCol = 0;
+      
+      //Get the list of adjacent rooms to find where we should spawn troops
+      foreach i in Send(poOwner,@GetYellZone)
+      {
+         oFlagpole = Send(Send(SYS,@FindRoomByNum,#num=i),
+                           @FindHoldingActive,#class=&Flagpole);
+         
+         if (oFlagpole <> $)
+            AND (Send(oFlagpole,@GetFaction) = Send(self,@GetFaction))
+         {
+            //We've found a flagpole of the defending faction- add that room to the list
+            lAdjTerritory = Cons(i, lAdjTerritory);
+         }
+      }
+      
+      if (lAdjTerritory <> $)
+      {
+         // Debug("Found an adjacent Territory to reinforce from");
+         // Debug("lAdjTerritory = ",lAdjTerritory);
+         // Pick a random room from the list and use that RID
+         AdjacentRID = Nth(lAdjTerritory,Random(1,Length(lAdjTerritory)));
+         // Debug("AdjacentRID = ",AdjacentRID);
+         
+         //Check this owners plExits and plEdgeExits for AdjacentRID and get coordinates
+         //Format is [ row in this room, col in this room, destination RID, row, column, angle modifier, max distance from dest square to ]
+         foreach i in Send(Send(self,@GetOwner),@GetExits)
+         {
+            // Debug("Looking for adjacent room exit coordinates");
+            // Debug("i = ",i);
+            // Debug("Nth(i,3) = ",Nth(i,3));
+            if AdjacentRID = Nth(i,3)
+               AND iGenRow = 0
+               AND iGenCol = 0
+            {
+               // Debug("Found the exit to the adjacent territory- saving coordinates");
+               iGenRow = Nth(i,1);
+               iGenCol = Nth(i,2);
+               // Debug("iGenCol = ",iGenCol);
+               // Debug("iGenRow = ",iGenRow);
+               break;
+            }
+         }
+         
+         //Format is [ Edge, RID_TO, row, col, angle_modifier ];
+         foreach i in Send(Send(self,@GetOwner),@GetEdgeExits)
+         {
+            // Debug("Looking for adjacent room exit coordinates");
+            // Debug("i = ",i);
+            // Debug("Nth(i,2) = ",Nth(i,2));
+            //oRoom = Send(SYS,@FindRoomByNum,#num=RID);
+            if AdjacentRID = Nth(i,2)
+               AND iGenRow = 0
+               AND iGenCol = 0
+            {
+               //Translate Edge into some coordinates
+               // Debug("Found the exit to the adjacent RID- resolving to a room");
+               oAdjacentRoom = Send(SYS,@FindRoomByNum,#num=AdjacentRID);
+               // Debug("Looking for owners RID",Send(Send(self,@GetOwner),@GetRoomNum));
+               //Loop through the adjacent rooms plEdge_Exits to find our owners RID
+               foreach j in Send(oAdjacentRoom,@GetEdgeExits)
+               {
+                  if Send(Send(self,@GetOwner),@GetRoomNum) = Nth(j,2)
+                  {
+                     //We've found the edge exit from the adjacent room back to the contested one
+                     iGenRow = Nth(j,3);
+                     iGenCol = Nth(j,4);
+                     // Debug("iGenRow = ",iGenRow);
+                     // Debug("iGenCol = ",iGenCol);
+                     break;
+                  }
+               }
+            }
+         }
+      }
+      else
+      {
+         Debug("No Adjacent Territory was found - returning");
+         return;
+         // I think this might be the case if a home base is being attacked.
+         // If so, then use special coordinates for each one
+      }
+      
+      ptSendReinforcements = $;
+      oTerritoryGame = Send(SYS,@GetTerritoryGame);
+      
+      // We failed to find coordinates - grab the blink spot
+      if iGenRow = 0
+         AND iGenCol = 0
+      {
+         iGenRow = Send(Send(self,@GetOwner),@GetTeleportRow);
+         iGenCol = Send(Send(self,@GetOwner),@GetTeleportCol);
+      }
+
+      switch(piReinforcementsWave)
+      {
+         case 0:
+            //Send scouts
+            Debug("Sending 2 scouts");
+            if iGenRow <> $ AND iGenCol <> $
+            {
+               //Create monsters and stick them here
+               switch(piFaction)
+               {
+                  case FACTION_DUKE:
+                     Debug("DukeTroops being created");
+                     oTroop1 = Create(&DukeTroop);
+                     oTroop2 = Create(&DukeTroop);
+                     break;
+                     
+                  case FACTION_PRINCESS:
+                     Debug("PrincessTroops being created");
+                     oTroop1 = Create(&PrincessTroop);
+                     oTroop2 = Create(&PrincessTroop);
+                     break;
+                     
+                  case FACTION_REBEL:
+                     Debug("RebelTroops being created");
+                     oTroop1 = Create(&RebelTroop);
+                     oTroop2 = Create(&RebelTroop);
+                     break;
+                     
+                  default:
+                     Debug("Neutral flag calling for reinforcements!");
+                     break;
+                     
+               }
+               
+               Debug("Sending troops to the contested room");
+               //This works up to this point (with edge exits- need to test on a map with doors later
+               //Also need to validate the row and column because I did not notice the troops actually spawning
+               Send(Send(self,@GetOwner),@NewHold,#what=oTroop1,
+                  #new_row=iGenRow,#new_col=iGenCol);
+               
+               Send(Send(self,@GetOwner),@NewHold,#what=oTroop2,
+                  #new_row=iGenRow,#new_col=iGenCol);
+               
+               //Short sword, Leather armor, Gauntlets, No Helm
+               Send(oTroop1,@SetEquipment,#dmWeaponOverride=&ShortSword,#dmArmorOverride=&LeatherArmor,
+                  #dmGauntsOverride=&Gauntlet,#dmHelmOverride=&Helmet);
+               Send(oTroop2,@SetEquipment,#dmWeaponOverride=&ShortSword,#dmArmorOverride=&LeatherArmor,
+                  #dmGauntsOverride=&Gauntlet,#dmHelmOverride=&Helmet);
+            }
+            break;
+         case 1:
+            //Send troops
+            Debug("Sending 3 soldiers");
+            if iGenRow <> $ AND iGenCol <> $
+            {
+               //Create monsters and stick them here
+               switch(piFaction)
+               {
+                  case FACTION_DUKE:
+                     Debug("DukeTroops being created");
+                     oTroop1 = Create(&DukeTroop);
+                     oTroop2 = Create(&DukeTroop);
+                     oTroop3 = Create(&DukeTroop);
+                     break;
+                     
+                  case FACTION_PRINCESS:
+                     Debug("PrincessTroops being created");
+                     oTroop1 = Create(&PrincessTroop);
+                     oTroop2 = Create(&PrincessTroop);
+                     oTroop3 = Create(&PrincessTroop);
+                     break;
+                     
+                  case FACTION_REBEL:
+                     Debug("RebelTroops being created");
+                     oTroop1 = Create(&RebelTroop);
+                     oTroop2 = Create(&RebelTroop);
+                     oTroop3 = Create(&RebelTroop);
+                     break;
+                     
+                  default:
+                     Debug("Neutral flag calling for reinforcements!");
+                     break;
+                     
+               }
+               
+               Send(Send(self,@GetOwner),@NewHold,#what=oTroop1,
+                  #new_row=iGenRow,#new_col=iGenCol);
+               
+               Send(Send(self,@GetOwner),@NewHold,#what=oTroop2,
+                  #new_row=iGenRow,#new_col=iGenCol);
+               
+               Send(Send(self,@GetOwner),@NewHold,#what=oTroop3,
+                  #new_row=iGenRow,#new_col=iGenCol);
+               
+               //Long sword, Leather armor, Gauntlets, No Helm
+               Send(oTroop1,@SetEquipment,#dmWeaponOverride=&LongSword,
+                  #dmArmorOverride=&LeatherArmor,#dmGauntsOverride=&Gauntlet);
+               //Axe, Leather armor, Gauntlets, No Helm
+               Send(oTroop2,@SetEquipment,#dmWeaponOverride=&Axe,
+                  #dmArmorOverride=&LeatherArmor,#dmGauntsOverride=&Gauntlet);
+               //Hammer, Leather armor, Gauntlets, Helm
+               Send(oTroop3,@SetEquipment,#dmWeaponOverride=&Hammer,
+                  #dmArmorOverride=&LeatherArmor,#dmGauntsOverride=&Gauntlet,
+                  #dmHelmOverride=&Helmet);
+            }
+            break;
+         case 2:
+            //Send advanced troops
+            Debug("Sending 4 advanced troops");
+            if iGenRow <> $ AND iGenCol <> $
+            {
+               //Create monsters and stick them here
+               switch(piFaction)
+               {
+                  case FACTION_DUKE:
+                     Debug("DukeTroops being created");
+                     oTroop1 = Create(&DukeTroop);
+                     oTroop2 = Create(&DukeTroop);
+                     oTroop3 = Create(&DukeMage);
+                     oTroop4 = Create(&DukeMage);
+                     break;
+                     
+                  case FACTION_PRINCESS:
+                     Debug("PrincessTroops being created");
+                     oTroop1 = Create(&PrincessTroop);
+                     oTroop2 = Create(&PrincessTroop);
+                     oTroop3 = Create(&PrincessMage);
+                     oTroop4 = Create(&PrincessMage);
+                     break;
+                     
+                  case FACTION_REBEL:
+                     Debug("RebelTroops being created");
+                     oTroop1 = Create(&RebelTroop);
+                     oTroop2 = Create(&RebelTroop);
+                     oTroop3 = Create(&RebelTroop);
+                     oTroop4 = Create(&RebelTroop);
+                     break;
+                     
+                  default:
+                     Debug("Neutral flag calling for reinforcements!");
+                     break;
+                     
+               }
+               
+               //Troop1 and Troop2 will be the Plate wielders for any faction
+               Send(Send(self,@GetOwner),@NewHold,#what=oTroop1,
+                  #new_row=iGenRow,#new_col=iGenCol);
+               
+               Send(Send(self,@GetOwner),@NewHold,#what=oTroop2,
+                  #new_row=iGenRow,#new_col=iGenCol);
+               
+               //Troop3 and Troop4 will be either archers (jonas) or mages(duke/cess)
+               Send(Send(self,@GetOwner),@NewHold,#what=oTroop3,
+                  #new_row=iGenRow,#new_col=iGenCol);
+               
+               Send(Send(self,@GetOwner),@NewHold,#what=oTroop4,
+                  #new_row=iGenRow,#new_col=iGenCol);
+               
+               //Long sword, Leather armor, Gauntlets, Helm
+               Send(oTroop1,@SetEquipment,#dmWeaponOverride=&Scimitar,
+                  #dmArmorOverride=&LeatherArmor,#dmGauntsOverride=&Gauntlet,
+                  #dmHelmOverride=&Helmet);
+               //Axe, Leather armor, Gauntlets, Helm
+               Send(oTroop2,@SetEquipment,#dmWeaponOverride=&Scimitar,
+                  #dmArmorOverride=&LeatherArmor,#dmGauntsOverride=&Gauntlet,
+                  #dmHelmOverride=&Helmet);
+
+               if piFaction = FACTION_REBEL
+               {
+                  //Longbow, plate armor, Gauntlets, Helm
+                  Send(oTroop3,@SetEquipment,#dmWeaponOverride=&LongBow,
+                     #dmArmorOverride=&PlateArmor,#dmGauntsOverride=&Gauntlet,
+                     #dmHelmOverride=&Helmet);
+                  //battle bow, plate armor, Gauntlets, Helm
+                  Send(oTroop4,@SetEquipment,#dmWeaponOverride=&BattleBow,
+                     #dmArmorOverride=&PlateArmor,#dmGauntsOverride=&Gauntlet,
+                     #dmHelmOverride=&Helmet);
+			   }
+			   else
+			   {
+			      //Troop3 & Troop4 are FactionMages
+			      Send(oTroop3,@SetEquipment,#dmArmorOverride=&Robe,
+                     #dmHelmOverride=&Circlet);
+			      Send(oTroop4,@SetEquipment,#dmArmorOverride=&Robe,
+                     #dmHelmOverride=&Circlet);
+			   }
+            }
+            break;
+         case 3:
+            //Send faction champion
+            Debug("Sending A Faction Champion");
+            if iGenRow <> $ AND iGenCol <> $
+            {
+               //Create monster and stick them here
+            }
+            break;
+         default:
+            break;
+      }
+      
+      //Increment wave
+      piReinforcementsWave += 1;
+      //Restart the 'wave' timer
+      ptSendReinforcements = CreateTimer(self,@GenerateReinforcements,
+                           (Send(oTerritoryGame,@GetClaimWait)*20000)-5000);
+      
+      return;
+   }
 
    CleanupExtraTroops()
    {
@@ -985,6 +1350,7 @@ messages:
    Delete()
    {
       poClaimer = $;
+      piReinforcementsWave = 0;
 
       if ptClaimAttempt <> $
       {

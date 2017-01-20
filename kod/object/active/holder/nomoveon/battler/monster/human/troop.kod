@@ -24,12 +24,16 @@ resources:
    FactionTroop_desc_rsc = \
    "This is a member of the local militia."
    FactionTroop_dead_name_rsc = "dead faction troop"
+   
+   FactionTroop_defend_ally_rsc = "%s%s comes to your aid!"
 
 classvars:
 
    vrName = FactionTroop_name_rsc
    vrDesc = FactionTroop_desc_rsc
    vrDead_name = FactionTroop_dead_name_rsc
+   
+   vrDefend = FactionTroop_defend_ally_rsc
 
    viTreasure_type = TID_EMPTY
 
@@ -51,6 +55,9 @@ classvars:
 
    viCashMin = 200
    viCashMax = 600
+   
+   //chance to attack the enemy soldier or defend an ally soldier
+   viAttackDefenseValue = 50
 
 properties:
 
@@ -65,8 +72,117 @@ properties:
    viDifficulty = 4     // piBaseDifficulty
    piGender = GENDER_MALE
    viKarma = 0
+   
+   plAllies = $
+   pbAssessTakeoverAttempts = TRUE
 
 messages:
+   
+   Constructed()
+   {
+      if pbAssessTakeoverAttempts
+      {
+         Post(self,@AssessTakeoverAttempt);
+      }
+      propagate;
+   }
+   
+   AssessTakeoverAttempt()
+   {
+      local i, oRoom, oFlag, oEnemyClaimer, oAllyInNeed,
+            bFlagUnderAttack, each_obj;
+         
+      //oRoom - where the troop spawned
+      oRoom = Send(self,@GetOwner);
+      
+      if (oRoom <> $)
+      {
+         //Look for a flagpole in room object oRoom
+         //Then assess if the flagpole is under attack take action
+         foreach i in Send(oRoom,@GetHolderActive)
+         {
+            //Look for a flagpole in the room
+            each_obj = Send(oRoom,@HolderExtractObject,#data=i);
+            if IsClass(each_obj,&Flagpole)
+            {
+               oFlag = each_obj;
+            }
+            else if GetClass(each_obj) = &Player
+            {
+               //Check if they are an ally soldier
+               if Send(each_obj,@IsAlly,#regroup=TRUE)
+               {
+                  //Only care about soldiers - Gotta be "intriguing"
+                  if Send(each_obj,@FindUsing,#class=&SoldierShield) <> $
+                  {
+                     plAllies = Cons(each_obj, plAllies);
+                  }
+               }
+            }
+         }
+         // Debug("plAllies = ",plAllies);
+      }
+      else
+      {
+         Debug("FactionTroop called AssessTakeoverAttempt with no owner");
+      }
+      
+      if oFlag <> $
+      {
+         //Check if the flag is under attack
+         oEnemyClaimer = Send(oFlag,@GetClaimer);
+         if oEnemyClaimer <> $
+         {
+            bFlagUnderAttack = TRUE;
+            // Debug("A soldier spawned to a flag under attack");
+         }
+         // Debug("oEnemyClaimer = ",oEnemyClaimer);
+      }
+      
+      if bFlagUnderAttack = TRUE
+      {
+         //Determine if we should defend the flag, or assist allies in need
+         if Random(0,100) < (100 - viAttackDefenseValue)
+         {
+            //target enemy flag barer
+            //Possibly set iHatred based on remaining Flagpole.ptClaimAttempt ?
+            Send(self,@TargetSwitch,#what=oEnemyClaimer,#iHatred=30);
+            Send(self,@EnterStateChase,#target=oEnemyClaimer,#actnow=TRUE);
+            // Debug("Switching target to oEnemyClaimer");
+         }
+         else if plAllies <> $
+         {
+            //search for low health ally
+            Debug("Looking for ally to defend");
+            oAllyInNeed = First(plAllies);
+            foreach i in plAllies
+            {
+               if Send(i,@GetHealth) < Send(oAllyInNeed,@GetHealth) AND i <> oAllyInNeed
+               {
+                  oAllyInNeed = i;
+               }
+            }
+         }
+      }
+      
+      if oAllyInNeed <> $
+      {
+         //Become a minion of that ally until they leave the room (includes logging off), or the ClaimAttempt ends
+         Debug("FactionTroop decided to try and defend",oAllyInNeed);
+         //We'll make this troop a minion of the oAllyInNeed.
+         //Make sure to de-minionize if the Ally flees, dies, logs, or the takeover ends
+         //We shouldn't need to worry about Seduce, because they will lose faction status by casting that on us
+         Send(oAllyInNeed,@MsgSendUser,#message_rsc=vrDefend,
+               #parm1=Send(self,@GetCapDef),#parm2=Send(self,@GetName));
+         
+         if Send(self,@GetMaster) = $
+         {
+            Send(oAllyInNeed,@SetMaster,#oMaster=self);
+         }
+      }
+      
+      return;
+   }
 
    SetClothes()
    {
@@ -76,96 +192,131 @@ messages:
       return;
    }
 
-   SetEquipment()
+   SetEquipment(dmWeaponOverride=$,dmArmorOverride=$,
+                dmGauntsOverride=$,dmHelmOverride=$)
    {
       local oEquipmentItem, iRandomNumber, iBonusModifier;
 
-      iRandomNumber = Random(1,100);
-      if iRandomNumber <= 35
+      if dmWeaponOverride = $
       {
-         oEquipmentItem = Create(&Longsword);
-         iBonusModifier = 3;
-      }
-      else if iRandomNumber <= 55
-      {
-         oEquipmentItem = Create(&Axe);
-         iBonusModifier = 2;
-      }
-      else if iRandomNumber <= 65
-      {
-         oEquipmentItem = Create(&Hammer);
-         iBonusModifier = 2;
-      }
-      else if iRandomNumber <= 75
-      {
-         oEquipmentItem = Create(&Mace);
-         iBonusModifier = 1;
-      }
-      else if iRandomNumber <= 80
-      {
-         oEquipmentItem = Create(&ShortSword);
-         iBonusModifier = 1;
-      }
-      else if iRandomNumber <= 85
-      {
-         oEquipmentItem = Create(&Scimitar);
-         iBonusModifier = 4;
-      }
-      else if iRandomNumber <= 90
-      {
-        oEquipmentItem = Create(&BattleBow);
-        poArrow = Create(&NeruditeArrow);
-        iBonusModifier = 5;
+         iRandomNumber = Random(1,100);
+         if iRandomNumber <= 35
+         {
+            oEquipmentItem = Create(&Longsword);
+            iBonusModifier = 3;
+         }
+         else if iRandomNumber <= 55
+         {
+            oEquipmentItem = Create(&Axe);
+            iBonusModifier = 2;
+         }
+         else if iRandomNumber <= 65
+         {
+            oEquipmentItem = Create(&Hammer);
+            iBonusModifier = 2;
+         }
+         else if iRandomNumber <= 75
+         {
+            oEquipmentItem = Create(&Mace);
+            iBonusModifier = 1;
+         }
+         else if iRandomNumber <= 80
+         {
+            oEquipmentItem = Create(&ShortSword);
+            iBonusModifier = 1;
+         }
+         else if iRandomNumber <= 85
+         {
+            oEquipmentItem = Create(&Scimitar);
+            iBonusModifier = 4;
+         }
+         else if iRandomNumber <= 90
+         {
+           oEquipmentItem = Create(&BattleBow);
+           poArrow = Create(&NeruditeArrow);
+           iBonusModifier = 5;
+         }
+         else
+         {
+            oEquipmentItem = Create(&LongBow);
+            poArrow = Create(&NeruditeArrow);
+            iBonusModifier = 4;
+         }
+         
+         viDifficulty = piBaseDifficulty + iBonusModifier;
       }
       else
       {
-         oEquipmentItem = Create(&LongBow);
-         poArrow = Create(&NeruditeArrow);
-         iBonusModifier = 4;
+         // Override weapon for custom troop creation
+         oEquipmentItem = Create(dmWeaponOverride);
       }
 
-      viDifficulty = piBaseDifficulty + iBonusModifier;
       Send(self,@AddEquipmentObject,#what=oEquipmentItem);
 
-      iRandomNumber = Random(1,100);
-      if iRandomNumber <= 35
+      if dmArmorOverride = $
       {
-         oEquipmentItem = Create(&LeatherArmor);
-         iBonusModifier = 20;
-      }
-      else if iRandomNumber <= 70
-      {
-         oEquipmentItem = Create(&ChainArmor);
-         iBonusModifier = 50;
-      }
-      else if iRandomNumber <= 85
-      {
-         oEquipmentItem = Create(&ScaleArmor);
-         iBonusModifier = 75;
+         iRandomNumber = Random(1,100);
+         if iRandomNumber <= 35
+         {
+            oEquipmentItem = Create(&LeatherArmor);
+            iBonusModifier = 20;
+         }
+         else if iRandomNumber <= 70
+         {
+            oEquipmentItem = Create(&ChainArmor);
+            iBonusModifier = 50;
+         }
+         else if iRandomNumber <= 85
+         {
+            oEquipmentItem = Create(&ScaleArmor);
+            iBonusModifier = 75;
+         }
+         else
+         {
+            oEquipmentItem = Create(&PlateArmor);
+            iBonusModifier = 100;
+         }
+
+         viLevel = piBaseLevel + iBonusModifier;
       }
       else
       {
-         oEquipmentItem = Create(&PlateArmor);
-         iBonusModifier = 100;
+         // Override armor for custom troop creation
+         oEquipmentItem = Create(dmArmorOverride);
       }
 
-      viLevel = piBaseLevel + iBonusModifier;
       Send(self,@AddEquipmentObject,#what=oEquipmentItem);
 
       // Gauntlets?
-      iRandomNumber = Random(1,100);
-      if iRandomNumber < 20
+      if dmGauntsOverride = $
       {
-         oEquipmentItem = Create(&Gauntlet);
-         viDifficulty = viDifficulty + 1;
-         viLevel = viLevel + 20;
+         iRandomNumber = Random(1,100);
+         if iRandomNumber < 20
+         {
+            oEquipmentItem = Create(&Gauntlet);
+            viDifficulty = viDifficulty + 1;
+            viLevel = viLevel + 20;
+            Send(self,@AddEquipmentObject,#what=oEquipmentItem);
+         }
+      }
+      else
+      {
+         oEquipmentItem = Create(dmGauntsOverride);
          Send(self,@AddEquipmentObject,#what=oEquipmentItem);
       }
-
+         
       // Helmet?
-      if Random(1,100) < 30
+      if dmHelmOverride = $
       {
-         oEquipmentItem = Create(&SimpleHelm);
+         if Random(1,100) < 30
+         {
+            oEquipmentItem = Create(&SimpleHelm);
+            Send(self,@AddEquipmentObject,#what=oEquipmentItem);
+         }
+      }
+      else
+      {
+         oEquipmentItem = Create(dmHelmOverride);
          Send(self,@AddEquipmentObject,#what=oEquipmentItem);
       }
 

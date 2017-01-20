@@ -1991,6 +1991,16 @@ messages:
    {
       return plYell_Zone;
    }
+   
+   GetExits()
+   {
+      return plExits;
+   }
+   
+   GetEdgeExits()
+   {
+      return plEdge_Exits;
+   }
 
    ReqNewHold(what = $,new_row = $,new_col = $)
    {

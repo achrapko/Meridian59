@@ -25,7 +25,8 @@ properties:
 
 messages:
 
-   SetEquipment()
+   SetEquipment(dmWeaponOverride=$,dmArmorOverride=$,
+                dmGauntsOverride=$,dmHelmOverride=$)
    {
       local oEquipmentItem, iBonusModifier, oSpell;
 
@@ -36,6 +37,7 @@ messages:
       Send(self,@AddEquipmentObject,#what=oEquipmentItem);
 
       if Random(0,1)
+         OR dmArmorOverride = &Robe
       {
          oEquipmentItem = Create(&LeatherArmor);
          iBonusModifier = Random(30,60);
@@ -56,6 +58,7 @@ messages:
       Send(self,@AddEquipmentObject,#what=oEquipmentItem);
 
       if Random(1,100) < 20
+         OR dmHelmOverride = &Circlet
       {
          iBonusModifier = iBonusModifier + 20;
          oEquipmentItem = Create(&Circlet);
